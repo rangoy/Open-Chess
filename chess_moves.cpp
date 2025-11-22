@@ -15,8 +15,16 @@ const char ChessMoves::INITIAL_BOARD[8][8] = {
 };
 
 ChessMoves::ChessMoves(BoardDriver* bd, ChessEngine* ce) : boardDriver(bd), chessEngine(ce) {
+    pgnTracker = new ChessPGN();
+    isWhiteTurn = true;
     // Initialize board state
     initializeBoard();
+}
+
+ChessMoves::~ChessMoves() {
+    if (pgnTracker) {
+        delete pgnTracker;
+    }
 }
 
 void ChessMoves::begin() {
@@ -193,11 +201,47 @@ void ChessMoves::update() {
                         boardDriver->captureAnimation();
                     }
                     
-                    // Process the move
+                    // Get captured piece before move is applied
+                    char capturedPiece = board[targetRow][targetCol];
+                    
+                    // Check if this will be a promotion
+                    char promotedPiece = '\0';
+                    if (chessEngine->isPawnPromotion(piece, targetRow)) {
+                        promotedPiece = chessEngine->getPromotedPiece(piece);
+                    }
+                    
+                    // Process the move (updates board state)
                     processMove(row, col, targetRow, targetCol, piece);
                     
-                    // Check for pawn promotion
+                    // Track move in PGN (before promotion is applied)
+                    if (pgnTracker) {
+                        Serial.print("Adding move to PGN: ");
+                        Serial.print((char)('a' + col));
+                        Serial.print(row + 1);
+                        Serial.print(" to ");
+                        Serial.print((char)('a' + targetCol));
+                        Serial.print(targetRow + 1);
+                        Serial.print(" (piece: ");
+                        Serial.print(piece);
+                        Serial.print(", captured: ");
+                        Serial.print(capturedPiece == ' ' ? 'E' : capturedPiece);
+                        Serial.print(", promoted: ");
+                        Serial.print(promotedPiece == '\0' ? 'N' : promotedPiece);
+                        Serial.println(")");
+                        pgnTracker->addMove(row, col, targetRow, targetCol, piece, capturedPiece, promotedPiece, !isWhiteTurn, board);
+                        Serial.print("Move count after add: ");
+                        Serial.println(pgnTracker->getMoveCount());
+                    } else {
+                        Serial.println("ERROR: pgnTracker is NULL when trying to add move!");
+                    }
+                    
+                    // Check for pawn promotion (this will update the board to promoted piece)
                     checkForPromotion(targetRow, targetCol, piece);
+                    
+                    // Update PGN tracker with final board state after promotion
+                    if (pgnTracker && promotedPiece != '\0') {
+                        pgnTracker->updateBoardState(board);
+                    }
                     
                     // Confirmation: Double blink destination square
                     for (int blink = 0; blink < 2; blink++) {
@@ -228,6 +272,11 @@ void ChessMoves::initializeBoard() {
             board[row][col] = INITIAL_BOARD[row][col];
         }
     }
+    isWhiteTurn = true;
+    if (pgnTracker) {
+        pgnTracker->reset();
+        pgnTracker->updateBoardState(board);
+    }
 }
 
 void ChessMoves::waitForBoardSetup() {
@@ -240,9 +289,14 @@ void ChessMoves::waitForBoardSetup() {
 }
 
 void ChessMoves::processMove(int fromRow, int fromCol, int toRow, int toCol, char piece) {
+    char capturedPiece = board[toRow][toCol];
+    
     // Update board state
     board[toRow][toCol] = piece;
     board[fromRow][fromCol] = ' ';
+    
+    // Toggle turn
+    isWhiteTurn = !isWhiteTurn;
 }
 
 void ChessMoves::checkForPromotion(int targetRow, int targetCol, char piece) {
@@ -338,4 +392,59 @@ void ChessMoves::setBoardState(char newBoardState[8][8]) {
     // Update sensor previous state to match new board
     boardDriver->readSensors();
     boardDriver->updateSensorPrev();
+    
+    // Update PGN tracker board state
+    if (pgnTracker) {
+        pgnTracker->updateBoardState(board);
+    }
+}
+
+String ChessMoves::getPGN() {
+    if (pgnTracker) {
+        return pgnTracker->getPGN();
+    }
+    return "";
+}
+
+bool ChessMoves::undoLastMove() {
+    Serial.print("undoLastMove called. pgnTracker: ");
+    Serial.println(pgnTracker ? "exists" : "NULL");
+    
+    if (!pgnTracker) {
+        Serial.println("ERROR: pgnTracker is NULL!");
+        return false;
+    }
+    
+    Serial.print("Move count: ");
+    Serial.println(pgnTracker->getMoveCount());
+    Serial.print("Can undo: ");
+    Serial.println(pgnTracker->canUndo() ? "yes" : "no");
+    
+    if (pgnTracker->canUndo()) {
+        bool success = pgnTracker->undoLastMove(board);
+        Serial.print("Undo result: ");
+        Serial.println(success ? "success" : "failed");
+        
+        if (success) {
+            isWhiteTurn = !isWhiteTurn;  // Toggle turn back
+            Serial.print("Turn toggled. Now: ");
+            Serial.println(isWhiteTurn ? "White" : "Black");
+            
+            // Update sensor previous state
+            boardDriver->readSensors();
+            boardDriver->updateSensorPrev();
+            
+            // Update PGN tracker board state
+            pgnTracker->updateBoardState(board);
+            
+            return true;
+        }
+    } else {
+        Serial.println("Cannot undo - no moves in history");
+    }
+    return false;
+}
+
+bool ChessMoves::canUndo() {
+    return pgnTracker && pgnTracker->canUndo();
 }

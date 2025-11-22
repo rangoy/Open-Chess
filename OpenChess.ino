@@ -3,6 +3,8 @@
 #include "chess_moves.h"
 #include "sensor_test.h"
 #include "chess_bot.h"
+#include "chess_bot_vs_bot.h"
+#include "crash_logger.h"
 
 // Uncomment the next line to enable WiFi features (requires compatible board)
 #define ENABLE_WIFI  // Currently disabled - RP2040 boards use local mode only
@@ -29,7 +31,8 @@ enum GameMode {
   MODE_CHESS_MOVES = 1,
   MODE_CHESS_BOT = 2,      // Chess vs Bot mode (Medium difficulty)
   MODE_GAME_3 = 3,         // Black AI Stockfish (Medium difficulty)
-  MODE_SENSOR_TEST = 4
+  MODE_SENSOR_TEST = 4,
+  MODE_BOT_VS_BOT = 5      // AI vs AI mode
 };
 
 // Global instances
@@ -39,10 +42,14 @@ ChessMoves chessMoves(&boardDriver, &chessEngine);
 SensorTest sensorTest(&boardDriver);
 ChessBot chessBot(&boardDriver, &chessEngine, BOT_MEDIUM, true);   // Mode 2: Player White, AI Black, Medium
 ChessBot chessBot3(&boardDriver, &chessEngine, BOT_MEDIUM, false);   // Mode 3: Player Black, AI White, Hard
+ChessBotVsBot chessBotVsBot(&boardDriver, &chessEngine, BOT_MEDIUM, BOT_MEDIUM, 2000);  // Mode 5: AI vs AI, 2 second delay
 
 #ifdef ENABLE_WIFI
 WiFiManager wifiManager;
 #endif
+
+// Crash logger
+CrashLogger crashLogger;
 
 // Current game state
 GameMode currentMode = MODE_SELECTION;
@@ -54,6 +61,7 @@ bool modeInitialized = false;
 void showGameSelection();
 void handleGameSelection();
 void initializeSelectedMode(GameMode mode);
+void displayPauseModeComparison();
 
 // ---------------------------
 // SETUP
@@ -79,6 +87,16 @@ void setup() {
   Serial.println("DEBUG: Serial communication established");
   Serial.print("DEBUG: Millis since boot: ");
   Serial.println(millis());
+  
+  // Initialize crash logger (checks for previous crashes)
+  crashLogger.begin();
+  
+  // Set global instance for WiFi managers to access
+  extern void setCrashLogger(CrashLogger* logger);
+  setCrashLogger(&crashLogger);
+  
+  // Enable watchdog timer (8 second timeout)
+  crashLogger.enableWatchdog(8);
   
   // Debug board type detection
   Serial.println("DEBUG: Board type detection:");
@@ -155,11 +173,18 @@ void setup() {
 // ---------------------------
 void loop() {
   static unsigned long lastDebugPrint = 0;
+  static unsigned long lastWatchdogFeed = 0;
   static bool firstLoop = true;
   
   if (firstLoop) {
     Serial.println("DEBUG: Entered main loop - system is running");
     firstLoop = false;
+  }
+  
+  // Feed watchdog timer regularly (every 2 seconds)
+  if (millis() - lastWatchdogFeed > 2000) {
+    crashLogger.feedWatchdog();
+    lastWatchdogFeed = millis();
   }
   
   // Print periodic status every 10 seconds
@@ -173,6 +198,30 @@ void loop() {
 #ifdef ENABLE_WIFI
   // Handle WiFi clients
   wifiManager.handleClient();
+  
+  // Check for pending undo request from WiFi
+  if (wifiManager.hasPendingUndoRequest()) {
+    Serial.println("Processing undo request from WiFi interface...");
+    
+    bool undoSuccess = false;
+    if (currentMode == MODE_CHESS_MOVES && modeInitialized) {
+      if (chessMoves.canUndo()) {
+        undoSuccess = chessMoves.undoLastMove();
+        if (undoSuccess) {
+          Serial.println("Move undone successfully");
+        } else {
+          Serial.println("Failed to undo move");
+        }
+      } else {
+        Serial.println("No moves to undo");
+      }
+    } else {
+      Serial.println("Warning: Undo requested but not in Chess Moves mode");
+    }
+    
+    wifiManager.setUndoResult(undoSuccess);
+    wifiManager.clearUndoRequest();
+  }
   
   // Check for pending board edits from WiFi
   char editBoard[8][8];
@@ -202,8 +251,10 @@ void loop() {
     bool boardUpdated = false;
     
     float evaluation = 0.0;
+    String pgn = "";
     if (currentMode == MODE_CHESS_MOVES && modeInitialized) {
       chessMoves.getBoardState(currentBoard);
+      pgn = chessMoves.getPGN();
       boardUpdated = true;
     } else if (currentMode == MODE_CHESS_BOT && modeInitialized) {
       chessBot.getBoardState(currentBoard);
@@ -213,10 +264,14 @@ void loop() {
       chessBot3.getBoardState(currentBoard);
       evaluation = chessBot3.getEvaluation();
       boardUpdated = true;
+    } else if (currentMode == MODE_BOT_VS_BOT && modeInitialized) {
+      chessBotVsBot.getBoardState(currentBoard);
+      evaluation = chessBotVsBot.getEvaluation();
+      boardUpdated = true;
     }
     
     if (boardUpdated) {
-      wifiManager.updateBoardState(currentBoard, evaluation);
+      wifiManager.updateBoardState(currentBoard, evaluation, pgn);
     }
     
     lastBoardUpdate = millis();
@@ -240,6 +295,9 @@ void loop() {
         break;
       case 4:
         currentMode = MODE_SENSOR_TEST;
+        break;
+      case 5:
+        currentMode = MODE_BOT_VS_BOT;
         break;
       default:
         Serial.println("Invalid game mode selected via WiFi");
@@ -282,25 +340,39 @@ void loop() {
       modeInitialized = true;
     }
     
-    // Run the current game mode
-    switch (currentMode) {
-      case MODE_CHESS_MOVES:
-        chessMoves.update();
-        break;
-      case MODE_CHESS_BOT:
-        chessBot.update();
-        break;
-      case MODE_GAME_3:
-        chessBot3.update();
-        break;
-      case MODE_SENSOR_TEST:
-        sensorTest.update();
-        break;
-      default:
-        currentMode = MODE_SELECTION;
-        modeInitialized = false;
-        showGameSelection();
-        break;
+    // Run the current game mode (only if move detection is not paused)
+    bool isPaused = false;
+#ifdef ENABLE_WIFI
+    isPaused = wifiManager.isMoveDetectionPaused();
+#endif
+    if (!isPaused) {
+      switch (currentMode) {
+        case MODE_CHESS_MOVES:
+          chessMoves.update();
+          break;
+        case MODE_CHESS_BOT:
+          chessBot.update();
+          break;
+        case MODE_GAME_3:
+          chessBot3.update();
+          break;
+        case MODE_SENSOR_TEST:
+          sensorTest.update();
+          break;
+        case MODE_BOT_VS_BOT:
+          chessBotVsBot.update();
+          break;
+        default:
+          currentMode = MODE_SELECTION;
+          modeInitialized = false;
+          showGameSelection();
+          break;
+      }
+    } else {
+      // When paused, display comparison between physical board and internal state
+      if (modeInitialized) {
+        displayPauseModeComparison();
+      }
     }
   }
   
@@ -328,6 +400,9 @@ void showGameSelection() {
   
   // Position 4: Sensor Test (row 4, col 4) - Red
   boardDriver.setSquareLED(4, 4, 255, 0, 0);
+  
+  // Position 5: Bot vs Bot (row 3, col 2) - Purple/Magenta
+  boardDriver.setSquareLED(3, 2, 255, 0, 255);
   
   boardDriver.showLEDs();
 }
@@ -368,6 +443,14 @@ void handleGameSelection() {
     boardDriver.clearAllLEDs();
     delay(500);
   }
+  else if (boardDriver.getSensorState(3, 2)) {
+    // Bot vs Bot selected
+    Serial.println("Bot vs Bot mode selected (AI vs AI)!");
+    currentMode = MODE_BOT_VS_BOT;
+    modeInitialized = false;
+    boardDriver.clearAllLEDs();
+    delay(500);
+  }
   
   delay(100);
 }
@@ -390,10 +473,76 @@ void initializeSelectedMode(GameMode mode) {
       Serial.println("Starting Black AI Stockfish (Player Black vs AI White - Hard)...");
       chessBot3.begin();
       break;
+    case MODE_BOT_VS_BOT:
+      Serial.println("Starting Bot vs Bot (AI vs AI)...");
+      chessBotVsBot.begin();
+      break;
     default:
       currentMode = MODE_SELECTION;
       modeInitialized = false;
       showGameSelection();
       break;
   }
+}
+
+// Display comparison between physical board sensors and internal board state when paused
+void displayPauseModeComparison() {
+  // Read current sensor state
+  boardDriver.readSensors();
+  
+  // Get current board state from active game mode
+  char boardState[8][8];
+  bool hasBoardState = false;
+  
+  switch (currentMode) {
+    case MODE_CHESS_MOVES:
+      chessMoves.getBoardState(boardState);
+      hasBoardState = true;
+      break;
+    case MODE_CHESS_BOT:
+      chessBot.getBoardState(boardState);
+      hasBoardState = true;
+      break;
+    case MODE_GAME_3:
+      chessBot3.getBoardState(boardState);
+      hasBoardState = true;
+      break;
+    case MODE_BOT_VS_BOT:
+      chessBotVsBot.getBoardState(boardState);
+      hasBoardState = true;
+      break;
+    default:
+      // No board state available for this mode
+      break;
+  }
+  
+  if (!hasBoardState) {
+    // If no board state, just clear LEDs
+    boardDriver.clearAllLEDs();
+    return;
+  }
+  
+  // Compare sensors with board state and set LEDs
+  for (int row = 0; row < 8; row++) {
+    for (int col = 0; col < 8; col++) {
+      bool sensorHasPiece = boardDriver.getSensorState(row, col);
+      bool boardHasPiece = (boardState[row][col] != ' ');
+      
+      if (sensorHasPiece && boardHasPiece) {
+        // White light: piece present AND board state has piece (match)
+        boardDriver.setSquareLED(row, col, 0, 0, 0, 255); // White using W channel
+      } else if (sensorHasPiece && !boardHasPiece) {
+        // Red light: piece present BUT board state is empty (extra piece)
+        boardDriver.setSquareLED(row, col, 255, 0, 0); // Red
+      } else if (!sensorHasPiece && boardHasPiece) {
+        // Blue light: board state has piece BUT no piece present (missing piece)
+        boardDriver.setSquareLED(row, col, 0, 0, 255); // Blue
+      } else {
+        // Both empty: turn off LED
+        boardDriver.setSquareLED(row, col, 0, 0, 0, 0);
+      }
+    }
+  }
+  
+  boardDriver.showLEDs();
 }

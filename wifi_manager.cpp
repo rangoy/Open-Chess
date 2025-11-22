@@ -1,5 +1,6 @@
 #include "wifi_manager.h"
 #include "wifi_html_templates.h"
+#include "crash_logger.h"
 
 // Only compile this file for WiFiNINA boards
 #ifdef WIFI_MANAGER_WIFININA_ENABLED
@@ -18,6 +19,9 @@ WiFiManager::WiFiManager() : server(AP_PORT) {
     boardStateValid = false;
     hasPendingEdit = false;
     boardEvaluation = 0.0;
+    boardPGN = "";
+    moveDetectionPaused = false;
+    pendingUndoRequest = false;
     
     // Initialize board state to empty
     for (int row = 0; row < 8; row++) {
@@ -125,9 +129,13 @@ void WiFiManager::handleClient() {
         bool currentLineIsBlank = true;
         bool readingBody = false;
         String body = "";
+        unsigned long requestStartTime = millis();
+        const unsigned long REQUEST_TIMEOUT = 3000; // 3 second timeout
+        unsigned long lastDataTime = millis();
         
-        while (client.connected()) {
+        while (client.connected() && (millis() - requestStartTime < REQUEST_TIMEOUT)) {
             if (client.available()) {
+                lastDataTime = millis();
                 char c = client.read();
                 
                 if (!readingBody) {
@@ -137,6 +145,27 @@ void WiFiManager::handleClient() {
                         // Headers ended, now reading body if POST
                         if (request.indexOf("POST") >= 0) {
                             readingBody = true;
+                            // For POST, read Content-Length to know how much body to read
+                            int contentLengthPos = request.indexOf("Content-Length:");
+                            if (contentLengthPos >= 0) {
+                                int contentLengthEnd = request.indexOf("\r\n", contentLengthPos);
+                                if (contentLengthEnd >= 0) {
+                                    String lengthStr = request.substring(contentLengthPos + 15, contentLengthEnd);
+                                    lengthStr.trim();
+                                    int contentLength = lengthStr.toInt();
+                                    // Limit body size
+                                    if (contentLength > 1000) contentLength = 1000;
+                                    // Read exactly that many bytes
+                                    while (body.length() < contentLength && client.available() && (millis() - requestStartTime < REQUEST_TIMEOUT)) {
+                                        if (client.available()) {
+                                            body += (char)client.read();
+                                        } else {
+                                            delay(1); // Small delay if no data
+                                        }
+                                    }
+                                    break; // Got the body, done
+                                }
+                            }
                         } else {
                             break; // GET request, no body
                         }
@@ -148,10 +177,23 @@ void WiFiManager::handleClient() {
                         currentLineIsBlank = false;
                     }
                 } else {
-                    // Reading POST body
+                    // Reading POST body (fallback if Content-Length not found)
                     body += c;
                     if (body.length() > 1000) break; // Prevent overflow
                 }
+            } else {
+                // No data available
+                // If we've been waiting for data for more than 200ms, break
+                if (millis() - lastDataTime > 200) {
+                    // If we have a valid request, process it
+                    if (request.length() > 10 && request.indexOf("HTTP") >= 0) {
+                        break; // Process what we have
+                    } else {
+                        // No valid request yet, but timeout to avoid blocking
+                        break;
+                    }
+                }
+                delay(1); // Small delay to yield to other tasks
             }
         }
         
@@ -205,6 +247,42 @@ void WiFiManager::handleClient() {
             // Game selection submission
             handleGameSelection(client, body);
         }
+        else if (request.indexOf("GET /pause-moves") >= 0) {
+            // Get pause state
+            handleGetPauseState(client);
+        }
+        else if (request.indexOf("POST /pause-moves") >= 0) {
+            // Set pause state
+            handlePauseMoves(client, body);
+        }
+        else if (request.indexOf("POST /undo-move") >= 0) {
+            // Undo last move
+            handleUndoMove(client);
+        }
+        else if (request.indexOf("GET /crash-logs") >= 0) {
+            // Crash logs page
+            CrashLogger* logger = getCrashLogger();
+            if (logger) {
+                // Check for clear parameter
+                int clearPos = request.indexOf("clear=1");
+                if (clearPos >= 0) {
+                    logger->clearLogs();
+                    String response = "<html><body style='font-family:Arial;background:#5c5d5e;color:#ec8703;text-align:center;padding:50px;'>";
+                    response += "<h2>Logs Cleared</h2>";
+                    response += "<p><a href='/crash-logs' style='color:#ec8703;'>View Logs</a></p>";
+                    response += "</body></html>";
+                    sendResponse(client, response);
+                } else {
+                    String logsPage = logger->generateCrashLogsHTML();
+                    sendResponse(client, logsPage);
+                }
+            } else {
+                String response = "<html><body style='font-family:Arial;background:#5c5d5e;color:#ec8703;text-align:center;padding:50px;'>";
+                response += "<h2>Crash Logger Not Available</h2>";
+                response += "</body></html>";
+                sendResponse(client, response);
+            }
+        }
         else {
             // 404 Not Found
             String response = "<html><body style='font-family:Arial;background:#5c5d5e;color:#ec8703;text-align:center;padding:50px;'>";
@@ -229,7 +307,7 @@ String WiFiManager::generateWebPage() {
 
 String WiFiManager::generateGameSelectionPage() {
     using namespace WiFiHTMLTemplates;
-    return generateGameSelectionPage();
+    return WiFiHTMLTemplates::generateGameSelectionPage();
 }
 
 void WiFiManager::handleGameSelection(WiFiClient& client, String body) {
@@ -319,10 +397,14 @@ void WiFiManager::resetGameSelection() {
 }
 
 void WiFiManager::updateBoardState(char newBoardState[8][8]) {
-    updateBoardState(newBoardState, 0.0);
+    updateBoardState(newBoardState, 0.0, "");
 }
 
 void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation) {
+    updateBoardState(newBoardState, evaluation, "");
+}
+
+void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation, String pgn) {
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             boardState[row][col] = newBoardState[row][col];
@@ -330,6 +412,7 @@ void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation) {
     }
     boardStateValid = true;
     boardEvaluation = evaluation;
+    boardPGN = pgn;
 }
 
 String WiFiManager::generateBoardJSON() {
@@ -356,6 +439,16 @@ String WiFiManager::generateBoardJSON() {
     json += "],";
     json += "\"valid\":" + String(boardStateValid ? "true" : "false");
     json += ",\"evaluation\":" + String(boardEvaluation, 2);
+    if (boardPGN.length() > 0) {
+        json += ",\"pgn\":\"";
+        // Escape quotes in PGN
+        String escapedPGN = boardPGN;
+        escapedPGN.replace("\"", "\\\"");
+        json += escapedPGN;
+        json += "\"";
+    } else {
+        json += ",\"pgn\":\"\"";
+    }
     json += "}";
     
     return json;
@@ -429,6 +522,51 @@ bool WiFiManager::getPendingBoardEdit(char editBoard[8][8]) {
 
 void WiFiManager::clearPendingEdit() {
     hasPendingEdit = false;
+}
+
+void WiFiManager::handleGetPauseState(WiFiClient& client) {
+    // Return current pause state without changing it
+    String response = "{";
+    response += "\"paused\":" + String(moveDetectionPaused ? "true" : "false");
+    response += "}";
+    sendResponse(client, response, "application/json");
+}
+
+void WiFiManager::handlePauseMoves(WiFiClient& client, String body) {
+    // Set pause state based on request
+    int pausedIndex = body.indexOf("paused=");
+    if (pausedIndex >= 0) {
+        int valueStart = pausedIndex + 7;
+        int valueEnd = body.indexOf("&", valueStart);
+        if (valueEnd < 0) valueEnd = body.length();
+        String pausedValue = body.substring(valueStart, valueEnd);
+        moveDetectionPaused = (pausedValue == "true" || pausedValue == "1");
+    } else {
+        // If no argument, toggle
+        moveDetectionPaused = !moveDetectionPaused;
+    }
+    
+    Serial.print("Move detection ");
+    Serial.println(moveDetectionPaused ? "PAUSED" : "RESUMED");
+    
+    // Return JSON response
+    String response = "{";
+    response += "\"paused\":" + String(moveDetectionPaused ? "true" : "false");
+    response += "}";
+    sendResponse(client, response, "application/json");
+}
+
+void WiFiManager::handleUndoMove(WiFiClient& client) {
+    // Set flag to request undo from main loop
+    pendingUndoRequest = true;
+    
+    Serial.println("Undo move requested via web interface");
+    
+    // Return JSON response
+    String response = "{";
+    response += "\"success\":true";
+    response += "}";
+    sendResponse(client, response, "application/json");
 }
 
 bool WiFiManager::connectToWiFi(String ssid, String password) {

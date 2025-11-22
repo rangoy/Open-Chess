@@ -3,6 +3,7 @@
 
 #include "board_driver.h"
 #include "chess_engine.h"
+#include "chess_pgn.h"
 
 // ---------------------------
 // Chess Game Mode Class
@@ -11,12 +12,14 @@ class ChessMoves {
 private:
     BoardDriver* boardDriver;
     ChessEngine* chessEngine;
+    ChessPGN* pgnTracker;
     
     // Expected initial configuration
     static const char INITIAL_BOARD[8][8];
     
     // Internal board state for gameplay
     char board[8][8];
+    bool isWhiteTurn;
     
     // Helper functions
     void initializeBoard();
@@ -27,6 +30,7 @@ private:
 
 public:
     ChessMoves(BoardDriver* bd, ChessEngine* ce);
+    ~ChessMoves();
     void begin();
     void update();
     bool isActive();
@@ -37,6 +41,11 @@ public:
     
     // Set board state for editing/corrections
     void setBoardState(char newBoardState[8][8]);
+    
+    // PGN and undo functionality
+    String getPGN();
+    bool undoLastMove();
+    bool canUndo();
 };
 
 #endif // CHESS_MOVES_H

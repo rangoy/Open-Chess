@@ -135,6 +135,7 @@ inline String generateConfigPage(String wifiSSID, String wifiPassword, String li
     
     html += "<a href=\"/game\" class=\"button\">Game Selection Interface</a>";
     html += "<a href=\"/board-view\" class=\"button\">View Chess Board</a>";
+    html += "<a href=\"/crash-logs\" class=\"button\" style=\"background-color: #f44336;\">View Crash Logs</a>";
     html += "<div class=\"note\">";
     html += "<p>Configure your OpenChess board settings and WiFi connection.</p>";
     html += "</div>";
@@ -171,7 +172,6 @@ inline String generatePieceSymbolJS() {
 // Generate board view page (fetches board state via JSON)
 inline String generateBoardViewPageTemplate() {
     String html = generateHTMLHead("OpenChess Board View", getBoardViewStyles());
-    html += "<meta http-equiv=\"refresh\" content=\"2\">"; // Auto-refresh every 2 seconds
     html += "</head>";
     html += "<body>";
     html += String(HTML_BOARD_VIEW_CONTENT);

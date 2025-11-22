@@ -6,6 +6,6 @@
 // Run 'npm run build' or 'yarn build' to regenerate
 
 #define HTML_GAME_SELECTION_SCRIPT \
-"function selectGame(e){1===e||2===e||3===e||4===e?fetch(\"/gameselect\",{method:\"POST\",headers:{\"Content-Type\":\"application/x-www-form-urlencoded\"},body:\"gamemode=\"+e}).then(e=>e.text()).then(o=>{alert(\"Game mode \"+e+\" selected! Check your chess board.\")}).catch(e=>{console.error(\"Error:\",e)}):alert(\"This game mode is coming soon!\")}"
+"function selectGame(e){1===e||2===e||3===e||4===e||5===e?fetch(\"/gameselect\",{method:\"POST\",headers:{\"Content-Type\":\"application/x-www-form-urlencoded\"},body:\"gamemode=\"+e}).then(e=>e.text()).then(o=>{alert(\"Game mode \"+e+\" selected! Check your chess board.\")}).catch(e=>{console.error(\"Error:\",e)}):alert(\"This game mode is coming soon!\")}"
 
 #endif // HTML_GAME_SELECTION_SCRIPT_H

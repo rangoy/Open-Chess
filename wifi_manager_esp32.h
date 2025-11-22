@@ -42,10 +42,18 @@ private:
     char boardState[8][8];
     bool boardStateValid;
     float boardEvaluation;  // Stockfish evaluation (in centipawns)
+    String boardPGN;  // PGN notation of the game
     
     // Board edit storage (pending edits from web interface)
     char pendingBoardEdit[8][8];
     bool hasPendingEdit;
+    
+    // Move detection pause state
+    bool moveDetectionPaused;
+    
+    // Undo request flag
+    bool pendingUndoRequest;
+    bool lastUndoSucceeded;
     
     // WiFi connection methods
     bool connectToWiFi(String ssid, String password);
@@ -65,10 +73,14 @@ private:
     void handleBoard();
     void handleBoardView();
     void handleBoardEdit();
+    void handleGetPauseState();
+    void handlePauseMoves();
+    void handleUndoMove();
     void handleConnectWiFi();
     void sendResponse(String content, String contentType = "text/html");
     void parseFormData(String data);
     void parseBoardEditData();
+    void parseBoardEditDataJSON(String jsonData);
     
 public:
     WiFiManagerESP32();
@@ -90,12 +102,24 @@ public:
     // Board state management
     void updateBoardState(char newBoardState[8][8]);
     void updateBoardState(char newBoardState[8][8], float evaluation);
+    void updateBoardState(char newBoardState[8][8], float evaluation, String pgn);
     bool hasValidBoardState() { return boardStateValid; }
     float getEvaluation() { return boardEvaluation; }
+    String getPGN() { return boardPGN; }
     
     // Board edit management
     bool getPendingBoardEdit(char editBoard[8][8]);
     void clearPendingEdit();
+    
+    // Move detection pause control
+    bool isMoveDetectionPaused() { return moveDetectionPaused; }
+    void setMoveDetectionPaused(bool paused) { moveDetectionPaused = paused; }
+    
+    // Undo request control
+    bool hasPendingUndoRequest() { return pendingUndoRequest; }
+    void clearUndoRequest() { pendingUndoRequest = false; }
+    void setUndoResult(bool success) { lastUndoSucceeded = success; }
+    bool getLastUndoResult() { return lastUndoSucceeded; }
     
     // WiFi status
     String getConnectionStatus();

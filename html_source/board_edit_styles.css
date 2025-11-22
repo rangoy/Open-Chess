@@ -14,6 +14,8 @@ h2 { text-align: center; color: #ec8703; font-size: 24px; margin-bottom: 20px; }
 .button:hover { background-color: #ebca13; }
 .button.secondary { background-color: #666; }
 .button.secondary:hover { background-color: #777; }
+.button.paused { background-color: #F44336; }
+.button.paused:hover { background-color: #d32f2f; }
 .info { text-align: center; color: #ec8703; margin-top: 20px; font-size: 14px; }
 .back-button { background-color: #666; color: white; border: none; padding: 15px; font-size: 16px; width: 100%; border-radius: 5px; cursor: pointer; text-decoration: none; display: block; text-align: center; margin-top: 20px; }
 .back-button:hover { background-color: #777; }

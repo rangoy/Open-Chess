@@ -1,5 +1,6 @@
 #include "wifi_manager_esp32.h"
 #include "wifi_html_templates.h"
+#include "crash_logger.h"
 #include <Arduino.h>
 #include "arduino_secrets.h"
 
@@ -14,6 +15,10 @@ WiFiManagerESP32::WiFiManagerESP32() : server(AP_PORT) {
     boardStateValid = false;
     hasPendingEdit = false;
     boardEvaluation = 0.0;
+    boardPGN = "";
+    moveDetectionPaused = false;
+    pendingUndoRequest = false;
+    lastUndoSucceeded = false;
     
     // Initialize board state to empty
     for (int row = 0; row < 8; row++) {
@@ -107,6 +112,21 @@ void WiFiManagerESP32::begin() {
     server.on("/connect-wifi", HTTP_POST, [this]() { this->handleConnectWiFi(); });
     server.on("/submit", HTTP_POST, [this]() { this->handleConfigSubmit(); });
     server.on("/gameselect", HTTP_POST, [this]() { this->handleGameSelection(); });
+    server.on("/pause-moves", HTTP_GET, [this]() { this->handleGetPauseState(); });
+    server.on("/pause-moves", HTTP_POST, [this]() { this->handlePauseMoves(); });
+    server.on("/undo-move", HTTP_POST, [this]() { this->handleUndoMove(); });
+    server.on("/crash-logs", HTTP_GET, [this]() { 
+        CrashLogger* logger = getCrashLogger();
+        if (logger && server.hasArg("clear") && server.arg("clear") == "1") {
+            logger->clearLogs();
+            this->server.send(200, "text/html", "<html><body style='font-family:Arial;background:#5c5d5e;color:#ec8703;text-align:center;padding:50px;'><h2>Logs Cleared</h2><p><a href='/crash-logs' style='color:#ec8703;'>View Logs</a></p></body></html>");
+        } else if (logger) {
+            String logsPage = logger->generateCrashLogsHTML();
+            this->server.send(200, "text/html", logsPage);
+        } else {
+            this->server.send(200, "text/html", "<html><body style='font-family:Arial;background:#5c5d5e;color:#ec8703;text-align:center;padding:50px;'><h2>Crash Logger Not Available</h2></body></html>");
+        }
+    });
     server.onNotFound([this]() {
         String response = "<html><body style='font-family:Arial;background:#5c5d5e;color:#ec8703;text-align:center;padding:50px;'>";
         response += "<h2>404 - Page Not Found</h2>";
@@ -198,7 +218,7 @@ String WiFiManagerESP32::generateWebPage() {
 
 String WiFiManagerESP32::generateGameSelectionPage() {
     using namespace WiFiHTMLTemplates;
-    return generateGameSelectionPage();
+    return WiFiHTMLTemplates::generateGameSelectionPage();
 }
 
 void WiFiManagerESP32::parseFormData(String data) {
@@ -265,10 +285,14 @@ void WiFiManagerESP32::resetGameSelection() {
 }
 
 void WiFiManagerESP32::updateBoardState(char newBoardState[8][8]) {
-    updateBoardState(newBoardState, 0.0);
+    updateBoardState(newBoardState, 0.0, "");
 }
 
 void WiFiManagerESP32::updateBoardState(char newBoardState[8][8], float evaluation) {
+    updateBoardState(newBoardState, evaluation, "");
+}
+
+void WiFiManagerESP32::updateBoardState(char newBoardState[8][8], float evaluation, String pgn) {
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             boardState[row][col] = newBoardState[row][col];
@@ -276,6 +300,7 @@ void WiFiManagerESP32::updateBoardState(char newBoardState[8][8], float evaluati
     }
     boardStateValid = true;
     boardEvaluation = evaluation;
+    boardPGN = pgn;
 }
 
 String WiFiManagerESP32::generateBoardJSON() {
@@ -302,6 +327,16 @@ String WiFiManagerESP32::generateBoardJSON() {
     json += "],";
     json += "\"valid\":" + String(boardStateValid ? "true" : "false");
     json += ",\"evaluation\":" + String(boardEvaluation, 2);
+    if (boardPGN.length() > 0) {
+        json += ",\"pgn\":\"";
+        // Escape quotes in PGN
+        String escapedPGN = boardPGN;
+        escapedPGN.replace("\"", "\\\"");
+        json += escapedPGN;
+        json += "\"";
+    } else {
+        json += ",\"pgn\":\"\"";
+    }
     json += "}";
     
     return json;
@@ -328,7 +363,27 @@ String WiFiManagerESP32::generateBoardEditPage() {
 }
 
 void WiFiManagerESP32::handleBoardEdit() {
-    parseBoardEditData();
+    // Check if request has JSON body
+    String contentType = server.header("Content-Type");
+    if (contentType.indexOf("application/json") >= 0) {
+        // Read JSON body - ESP32 WebServer stores body in "plain" argument
+        String body = server.arg("plain");
+        if (body.length() == 0) {
+            // Try alternative method
+            body = server.arg("body");
+        }
+        if (body.length() > 0) {
+            Serial.print("Received JSON body: ");
+            Serial.println(body);
+            parseBoardEditDataJSON(body);
+        } else {
+            Serial.println("Warning: JSON Content-Type but no body data found, falling back to form data");
+            parseBoardEditData();
+        }
+    } else {
+        // Parse form data (legacy support)
+        parseBoardEditData();
+    }
     
     String response = "<html><body style='font-family:Arial;background:#5c5d5e;color:#ec8703;text-align:center;padding:50px;'>";
     response += "<h2>Board Updated!</h2>";
@@ -338,6 +393,110 @@ void WiFiManagerESP32::handleBoardEdit() {
     response += "<p><a href='/' style='color:#ec8703;'>Back to Home</a></p>";
     response += "</body></html>";
     sendResponse(response);
+}
+
+void WiFiManagerESP32::parseBoardEditDataJSON(String jsonData) {
+    // Parse JSON: {"board":[["R","N","B",...],["r","n","b",...],...]}
+    // Initialize all to empty
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            pendingBoardEdit[row][col] = ' ';
+        }
+    }
+    
+    // Find the board array start
+    int boardArrayStart = jsonData.indexOf("\"board\":[");
+    if (boardArrayStart < 0) {
+        Serial.println("Error: Invalid JSON - no 'board' key found");
+        return;
+    }
+    
+    // Find the opening bracket of the board array
+    int arrayStart = jsonData.indexOf('[', boardArrayStart + 8);
+    if (arrayStart < 0) {
+        Serial.println("Error: Invalid JSON - no board array found");
+        return;
+    }
+    
+    int pos = arrayStart + 1; // Position after '['
+    int row = 0;
+    
+    // Parse each row
+    while (row < 8 && pos < jsonData.length()) {
+        // Skip whitespace
+        while (pos < jsonData.length() && (jsonData.charAt(pos) == ' ' || jsonData.charAt(pos) == '\n' || jsonData.charAt(pos) == '\r' || jsonData.charAt(pos) == '\t')) {
+            pos++;
+        }
+        
+        if (pos >= jsonData.length()) break;
+        
+        // Check if this is a row array
+        if (jsonData.charAt(pos) == '[') {
+            pos++; // Skip '['
+            int col = 0;
+            
+            // Parse row values
+            while (col < 8 && pos < jsonData.length()) {
+                // Skip whitespace
+                while (pos < jsonData.length() && (jsonData.charAt(pos) == ' ' || jsonData.charAt(pos) == '\n' || jsonData.charAt(pos) == '\r' || jsonData.charAt(pos) == '\t')) {
+                    pos++;
+                }
+                
+                if (pos >= jsonData.length()) break;
+                
+                char piece = ' ';
+                
+                // Check for string value
+                if (jsonData.charAt(pos) == '"') {
+                    pos++; // Skip opening quote
+                    if (pos < jsonData.length() && jsonData.charAt(pos) != '"') {
+                        piece = jsonData.charAt(pos);
+                        pos++;
+                    }
+                    // Find closing quote
+                    while (pos < jsonData.length() && jsonData.charAt(pos) != '"') {
+                        pos++;
+                    }
+                    if (pos < jsonData.length()) pos++; // Skip closing quote
+                } else if (jsonData.charAt(pos) == 'n') {
+                    // Check for "null"
+                    if (jsonData.substring(pos, pos + 4) == "null") {
+                        piece = ' ';
+                        pos += 4;
+                    }
+                }
+                
+                pendingBoardEdit[row][col] = piece;
+                col++;
+                
+                // Skip to next value (comma or closing bracket)
+                while (pos < jsonData.length() && jsonData.charAt(pos) != ',' && jsonData.charAt(pos) != ']') {
+                    pos++;
+                }
+                if (pos < jsonData.length() && jsonData.charAt(pos) == ',') {
+                    pos++; // Skip comma
+                }
+            }
+            
+            row++;
+            
+            // Skip to next row or closing bracket
+            while (pos < jsonData.length() && jsonData.charAt(pos) != '[' && jsonData.charAt(pos) != ']') {
+                pos++;
+            }
+            if (pos < jsonData.length() && jsonData.charAt(pos) == ']') {
+                pos++; // Skip row closing bracket
+                if (pos < jsonData.length() && jsonData.charAt(pos) == ',') {
+                    pos++; // Skip comma before next row
+                }
+            }
+        } else {
+            break; // Not a row array, exit
+        }
+    }
+    
+    hasPendingEdit = true;
+    Serial.println("Board edit received and stored (JSON)");
 }
 
 void WiFiManagerESP32::parseBoardEditData() {
@@ -377,6 +536,50 @@ bool WiFiManagerESP32::getPendingBoardEdit(char editBoard[8][8]) {
 
 void WiFiManagerESP32::clearPendingEdit() {
     hasPendingEdit = false;
+}
+
+void WiFiManagerESP32::handleGetPauseState() {
+    // Return current pause state without changing it
+    String response = "{";
+    response += "\"paused\":" + String(moveDetectionPaused ? "true" : "false");
+    response += "}";
+    server.send(200, "application/json", response);
+}
+
+void WiFiManagerESP32::handlePauseMoves() {
+    // Set pause state based on request
+    if (server.hasArg("paused")) {
+        String pausedArg = server.arg("paused");
+        moveDetectionPaused = (pausedArg == "true" || pausedArg == "1");
+    } else {
+        // If no argument, toggle
+        moveDetectionPaused = !moveDetectionPaused;
+    }
+    
+    Serial.print("Move detection ");
+    Serial.println(moveDetectionPaused ? "PAUSED" : "RESUMED");
+    
+    // Return JSON response
+    String response = "{";
+    response += "\"paused\":" + String(moveDetectionPaused ? "true" : "false");
+    response += "}";
+    server.send(200, "application/json", response);
+}
+
+void WiFiManagerESP32::handleUndoMove() {
+    // Set flag to request undo from main loop
+    // The main loop will process this on the next iteration
+    pendingUndoRequest = true;
+    lastUndoSucceeded = false;  // Reset result
+    
+    Serial.println("Undo move requested via web interface");
+    
+    // Return success - the actual undo will happen in the main loop
+    // The page reload will show the result
+    String response = "{";
+    response += "\"success\":true";
+    response += "}";
+    server.send(200, "application/json", response);
 }
 
 bool WiFiManagerESP32::connectToWiFi(String ssid, String password) {
