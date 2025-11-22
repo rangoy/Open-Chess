@@ -1,0 +1,16 @@
+body { font-family: Arial, sans-serif; background-color: #5c5d5e; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+.container { background-color: #353434; border-radius: 8px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); padding: 30px; }
+h2 { text-align: center; color: #ec8703; font-size: 24px; margin-bottom: 20px; }
+.board-container { display: inline-block; }
+.board { display: grid; grid-template-columns: repeat(8, 1fr); gap: 0; border: 3px solid #ec8703; width: 480px; height: 480px; }
+.square { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 40px; font-weight: bold; }
+.square.light { background-color: #f0d9b5; }
+.square.dark { background-color: #b58863; }
+.square .piece { text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+.square .piece.white { color: #ffffff; }
+.square .piece.black { color: #000000; }
+.info { text-align: center; color: #ec8703; margin-top: 20px; font-size: 14px; }
+.back-button { background-color: #666; color: white; border: none; padding: 15px; font-size: 16px; width: 100%; border-radius: 5px; cursor: pointer; text-decoration: none; display: block; text-align: center; margin-top: 20px; }
+.back-button:hover { background-color: #777; }
+.status { text-align: center; color: #ec8703; margin-bottom: 20px; }
+

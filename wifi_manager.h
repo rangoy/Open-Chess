@@ -56,7 +56,6 @@ private:
     String generateBoardViewPage();
     String generateBoardEditPage();
     String generateBoardJSON();
-    String getPieceSymbol(char piece);
     void handleConfigSubmit(WiFiClient& client, String request);
     void handleGameSelection(WiFiClient& client, String request);
     void handleBoardEdit(WiFiClient& client, String request, String body);

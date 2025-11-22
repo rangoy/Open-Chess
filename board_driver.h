@@ -17,7 +17,7 @@
 #define NUM_ROWS    8
 #define NUM_COLS    8
 #define LED_COUNT   (NUM_ROWS * NUM_COLS)
-#define BRIGHTNESS  255  // LED brightness: 0-255 (0=off, 255=max). Current: 255 (100% max brightness)
+#define BRIGHTNESS  125  // LED brightness: 0-255 (0=off, 255=max). Current: 255 (100% max brightness)
 
 // Shift Register (74HC594) Pins
 #define SER_PIN     2   // Serial data input (74HC594 pin 14)

@@ -59,7 +59,6 @@ private:
     String generateBoardViewPage();
     String generateBoardEditPage();
     String generateBoardJSON();
-    String getPieceSymbol(char piece);
     void handleRoot();
     void handleGameSelection();
     void handleConfigSubmit();
