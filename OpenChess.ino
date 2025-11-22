@@ -1,10 +1,8 @@
 #include "board_driver.h"
 #include "chess_engine.h"
-#include "chess_moves.h"
 #include "sensor_test.h"
-#include "chess_bot.h"
-#include "chess_bot_vs_bot.h"
 #include "crash_logger.h"
+#include "unified_chess_game.h"
 
 // Uncomment the next line to enable WiFi features (requires compatible board)
 #define ENABLE_WIFI  // Currently disabled - RP2040 boards use local mode only
@@ -28,21 +26,15 @@
 // Game Mode Definitions
 enum GameMode {
   MODE_SELECTION = 0,
-  MODE_CHESS_MOVES = 1,
-  MODE_CHESS_BOT = 2,      // Chess vs Bot mode (Medium difficulty)
-  MODE_GAME_3 = 3,         // Black AI Stockfish (Medium difficulty)
   MODE_SENSOR_TEST = 4,
-  MODE_BOT_VS_BOT = 5      // AI vs AI mode
+  MODE_UNIFIED_GAME = 6    // Unified game mode (supports any combination)
 };
 
 // Global instances
 BoardDriver boardDriver;
 ChessEngine chessEngine;
-ChessMoves chessMoves(&boardDriver, &chessEngine);
 SensorTest sensorTest(&boardDriver);
-ChessBot chessBot(&boardDriver, &chessEngine, BOT_MEDIUM, true);   // Mode 2: Player White, AI Black, Medium
-ChessBot chessBot3(&boardDriver, &chessEngine, BOT_MEDIUM, false);   // Mode 3: Player Black, AI White, Hard
-ChessBotVsBot chessBotVsBot(&boardDriver, &chessEngine, BOT_MEDIUM, BOT_MEDIUM, 2000);  // Mode 5: AI vs AI, 2 second delay
+UnifiedChessGame unifiedGame(&boardDriver, &chessEngine);
 
 #ifdef ENABLE_WIFI
 WiFiManager wifiManager;
@@ -55,6 +47,12 @@ CrashLogger crashLogger;
 GameMode currentMode = MODE_SELECTION;
 bool modeInitialized = false;
 
+// Game selection state
+PlayerType selectedWhitePlayer = PLAYER_HUMAN;
+PlayerType selectedBlackPlayer = PLAYER_HUMAN;
+bool whiteSelected = false;
+bool blackSelected = false;
+
 // ---------------------------
 // Function Prototypes
 // ---------------------------
@@ -62,6 +60,7 @@ void showGameSelection();
 void handleGameSelection();
 void initializeSelectedMode(GameMode mode);
 void displayPauseModeComparison();
+PlayerType getPlayerTypeFromPosition(int row, int col);
 
 // ---------------------------
 // SETUP
@@ -204,9 +203,9 @@ void loop() {
     Serial.println("Processing undo request from WiFi interface...");
     
     bool undoSuccess = false;
-    if (currentMode == MODE_CHESS_MOVES && modeInitialized) {
-      if (chessMoves.canUndo()) {
-        undoSuccess = chessMoves.undoLastMove();
+    if (currentMode == MODE_UNIFIED_GAME && modeInitialized) {
+      if (unifiedGame.canUndo()) {
+        undoSuccess = unifiedGame.undoLastMove();
         if (undoSuccess) {
           Serial.println("Move undone successfully");
         } else {
@@ -216,7 +215,7 @@ void loop() {
         Serial.println("No moves to undo");
       }
     } else {
-      Serial.println("Warning: Undo requested but not in Chess Moves mode");
+      Serial.println("Warning: Undo requested but not in a supported mode");
     }
     
     wifiManager.setUndoResult(undoSuccess);
@@ -228,15 +227,9 @@ void loop() {
   if (wifiManager.getPendingBoardEdit(editBoard)) {
     Serial.println("Applying board edit from WiFi interface...");
     
-    if (currentMode == MODE_CHESS_MOVES && modeInitialized) {
-      chessMoves.setBoardState(editBoard);
-      Serial.println("Board edit applied to Chess Moves mode");
-    } else if (currentMode == MODE_CHESS_BOT && modeInitialized) {
-      chessBot.setBoardState(editBoard);
-      Serial.println("Board edit applied to Chess Bot mode");
-    } else if (currentMode == MODE_GAME_3 && modeInitialized) {
-      chessBot3.setBoardState(editBoard);
-      Serial.println("Board edit applied to Black AI Stockfish mode");
+    if (currentMode == MODE_UNIFIED_GAME && modeInitialized) {
+      unifiedGame.setBoardState(editBoard);
+      Serial.println("Board edit applied to Unified Game mode");
     } else {
       Serial.println("Warning: Board edit received but no active game mode");
     }
@@ -252,21 +245,10 @@ void loop() {
     
     float evaluation = 0.0;
     String pgn = "";
-    if (currentMode == MODE_CHESS_MOVES && modeInitialized) {
-      chessMoves.getBoardState(currentBoard);
-      pgn = chessMoves.getPGN();
-      boardUpdated = true;
-    } else if (currentMode == MODE_CHESS_BOT && modeInitialized) {
-      chessBot.getBoardState(currentBoard);
-      evaluation = chessBot.getEvaluation();
-      boardUpdated = true;
-    } else if (currentMode == MODE_GAME_3 && modeInitialized) {
-      chessBot3.getBoardState(currentBoard);
-      evaluation = chessBot3.getEvaluation();
-      boardUpdated = true;
-    } else if (currentMode == MODE_BOT_VS_BOT && modeInitialized) {
-      chessBotVsBot.getBoardState(currentBoard);
-      evaluation = chessBotVsBot.getEvaluation();
+    if (currentMode == MODE_UNIFIED_GAME && modeInitialized) {
+      unifiedGame.getBoardState(currentBoard);
+      evaluation = unifiedGame.getEvaluation();
+      pgn = unifiedGame.getPGN();
       boardUpdated = true;
     }
     
@@ -277,50 +259,32 @@ void loop() {
     lastBoardUpdate = millis();
   }
   
-  // Check for WiFi game selection
-  int selectedMode = wifiManager.getSelectedGameMode();
-  if (selectedMode > 0) {
-    Serial.print("DEBUG: WiFi game selection detected: ");
-    Serial.println(selectedMode);
+  // Check for WiFi game selection (unified game mode)
+  if (wifiManager.hasPlayerSelection()) {
+    PlayerType wifiWhitePlayer = wifiManager.getSelectedWhitePlayer();
+    PlayerType wifiBlackPlayer = wifiManager.getSelectedBlackPlayer();
+    Serial.print("DEBUG: WiFi game selection detected - White: ");
+    Serial.print(wifiWhitePlayer);
+    Serial.print(", Black: ");
+    Serial.println(wifiBlackPlayer);
     
-    switch (selectedMode) {
-      case 1:
-        currentMode = MODE_CHESS_MOVES;
-        break;
-      case 2:
-        currentMode = MODE_CHESS_BOT;
-        break;
-      case 3:
-        currentMode = MODE_GAME_3;
-        break;
-      case 4:
-        currentMode = MODE_SENSOR_TEST;
-        break;
-      case 5:
-        currentMode = MODE_BOT_VS_BOT;
-        break;
-      default:
-        Serial.println("Invalid game mode selected via WiFi");
-        selectedMode = 0;
-        break;
-    }
+    selectedWhitePlayer = wifiWhitePlayer;
+    selectedBlackPlayer = wifiBlackPlayer;
+    currentMode = MODE_UNIFIED_GAME;
+    modeInitialized = false;
+    boardDriver.clearAllLEDs();
+    wifiManager.resetGameSelection();
     
-    if (selectedMode > 0) {
-      modeInitialized = false;
+    // Brief confirmation animation
+    for (int i = 0; i < 3; i++) {
+      boardDriver.setSquareLED(3, 3, 0, 255, 0, 0); // Green flash
+      boardDriver.setSquareLED(3, 4, 0, 255, 0, 0);
+      boardDriver.setSquareLED(4, 3, 0, 255, 0, 0);
+      boardDriver.setSquareLED(4, 4, 0, 255, 0, 0);
+      boardDriver.showLEDs();
+      delay(200);
       boardDriver.clearAllLEDs();
-      wifiManager.resetGameSelection();
-      
-      // Brief confirmation animation
-      for (int i = 0; i < 3; i++) {
-        boardDriver.setSquareLED(3, 3, 0, 255, 0, 0); // Green flash
-        boardDriver.setSquareLED(3, 4, 0, 255, 0, 0);
-        boardDriver.setSquareLED(4, 3, 0, 255, 0, 0);
-        boardDriver.setSquareLED(4, 4, 0, 255, 0, 0);
-        boardDriver.showLEDs();
-        delay(200);
-        boardDriver.clearAllLEDs();
-        delay(200);
-      }
+      delay(200);
     }
   }
 #endif
@@ -347,20 +311,11 @@ void loop() {
 #endif
     if (!isPaused) {
       switch (currentMode) {
-        case MODE_CHESS_MOVES:
-          chessMoves.update();
-          break;
-        case MODE_CHESS_BOT:
-          chessBot.update();
-          break;
-        case MODE_GAME_3:
-          chessBot3.update();
-          break;
         case MODE_SENSOR_TEST:
           sensorTest.update();
           break;
-        case MODE_BOT_VS_BOT:
-          chessBotVsBot.update();
+        case MODE_UNIFIED_GAME:
+          unifiedGame.update();
           break;
         default:
           currentMode = MODE_SELECTION;
@@ -387,67 +342,149 @@ void showGameSelection() {
   // Clear all LEDs first
   boardDriver.clearAllLEDs();
   
-  // Light up the 4 selector positions in the middle of the board
-  // Each mode has a different color for easy identification
-  // Position 1: Chess Moves (row 3, col 3) - Orange
-  boardDriver.setSquareLED(3, 3, 255, 165, 0);
+  // White side selection (rank 4, row 4 in array): a4, b4, c4, d4
+  // a4 (col 0, row 4) = Human - White
+  boardDriver.setSquareLED(4, 0, 0, 0, 0, 255);  // White LED
+  // b4 (col 1, row 4) = Easy AI - Green
+  boardDriver.setSquareLED(4, 1, 0, 255, 0);  // Green
+  // c4 (col 2, row 4) = Medium AI - Yellow
+  boardDriver.setSquareLED(4, 2, 255, 255, 0);  // Yellow
+  // d4 (col 3, row 4) = Hard AI - Orange
+  boardDriver.setSquareLED(4, 3, 255, 165, 0);  // Orange
   
-  // Position 2: Chess Bot (row 3, col 4) - White
-  boardDriver.setSquareLED(3, 4, 0, 0, 0, 255);
+  // Black side selection (rank 5, row 3 in array): a5, b5, c5, d5
+  // a5 (col 0, row 3) = Human - White
+  boardDriver.setSquareLED(3, 0, 0, 0, 0, 255);  // White LED
+  // b5 (col 1, row 3) = Easy AI - Green
+  boardDriver.setSquareLED(3, 1, 0, 255, 0);  // Green
+  // c5 (col 2, row 3) = Medium AI - Yellow
+  boardDriver.setSquareLED(3, 2, 255, 255, 0);  // Yellow
+  // d5 (col 3, row 3) = Hard AI - Orange
+  boardDriver.setSquareLED(3, 3, 255, 165, 0);  // Orange
   
-  // Position 3: Black AI Stockfish (row 4, col 3) - Blue
-  boardDriver.setSquareLED(4, 3, 0, 0, 255);
-  
-  // Position 4: Sensor Test (row 4, col 4) - Red
+  // Sensor Test (row 4, col 4) - Red
   boardDriver.setSquareLED(4, 4, 255, 0, 0);
   
-  // Position 5: Bot vs Bot (row 3, col 2) - Purple/Magenta
-  boardDriver.setSquareLED(3, 2, 255, 0, 255);
-  
   boardDriver.showLEDs();
+}
+
+PlayerType getPlayerTypeFromPosition(int row, int col) {
+  // White selection: rank 4 (row 4 in array)
+  if (row == 4) {
+    switch(col) {
+      case 0: return PLAYER_HUMAN;      // a4
+      case 1: return PLAYER_BOT_EASY;   // b4
+      case 2: return PLAYER_BOT_MEDIUM;// c4
+      case 3: return PLAYER_BOT_HARD;   // d4
+      default: return PLAYER_HUMAN;
+    }
+  }
+  // Black selection: rank 5 (row 3 in array)
+  else if (row == 3) {
+    switch(col) {
+      case 0: return PLAYER_HUMAN;      // a5
+      case 1: return PLAYER_BOT_EASY;   // b5
+      case 2: return PLAYER_BOT_MEDIUM;// c5
+      case 3: return PLAYER_BOT_HARD;   // d5
+      default: return PLAYER_HUMAN;
+    }
+  }
+  return PLAYER_HUMAN;
 }
 
 void handleGameSelection() {
   boardDriver.readSensors();
   
-  // Check for piece placement on selector squares
-  if (boardDriver.getSensorState(3, 3)) {
-    // Chess Moves selected
-    Serial.println("Chess Moves mode selected!");
-    currentMode = MODE_CHESS_MOVES;
-    modeInitialized = false;
-    boardDriver.clearAllLEDs();
-    delay(500); // Debounce delay
+  // Check for white side selection (rank 4, row 4)
+  if (!whiteSelected) {
+    for (int col = 0; col < 4; col++) {
+      if (boardDriver.getSensorState(4, col)) {
+        selectedWhitePlayer = getPlayerTypeFromPosition(4, col);
+        whiteSelected = true;
+        Serial.print("White player selected: ");
+        switch(selectedWhitePlayer) {
+          case PLAYER_HUMAN: Serial.println("Human"); break;
+          case PLAYER_BOT_EASY: Serial.println("Easy AI"); break;
+          case PLAYER_BOT_MEDIUM: Serial.println("Medium AI"); break;
+          case PLAYER_BOT_HARD: Serial.println("Hard AI"); break;
+        }
+        // Flash the selected square
+        for (int i = 0; i < 3; i++) {
+          boardDriver.setSquareLED(4, col, 0, 255, 0);
+          boardDriver.showLEDs();
+          delay(200);
+          boardDriver.setSquareLED(4, col, 0, 0, 0, 255);
+          boardDriver.showLEDs();
+          delay(200);
+        }
+        delay(500);
+        break;
+      }
+    }
   }
-  else if (boardDriver.getSensorState(3, 4)) {
-    // Chess Bot selected
-    Serial.println("Chess Bot mode selected (Human vs AI)!");
-    currentMode = MODE_CHESS_BOT;
-    modeInitialized = false;
-    boardDriver.clearAllLEDs();
-    delay(500);
+  
+  // Check for black side selection (rank 5, row 3)
+  if (!blackSelected) {
+    for (int col = 0; col < 4; col++) {
+      if (boardDriver.getSensorState(3, col)) {
+        selectedBlackPlayer = getPlayerTypeFromPosition(3, col);
+        blackSelected = true;
+        Serial.print("Black player selected: ");
+        switch(selectedBlackPlayer) {
+          case PLAYER_HUMAN: Serial.println("Human"); break;
+          case PLAYER_BOT_EASY: Serial.println("Easy AI"); break;
+          case PLAYER_BOT_MEDIUM: Serial.println("Medium AI"); break;
+          case PLAYER_BOT_HARD: Serial.println("Hard AI"); break;
+        }
+        // Flash the selected square
+        for (int i = 0; i < 3; i++) {
+          boardDriver.setSquareLED(3, col, 0, 255, 0);
+          boardDriver.showLEDs();
+          delay(200);
+          boardDriver.setSquareLED(3, col, 0, 0, 0, 255);
+          boardDriver.showLEDs();
+          delay(200);
+        }
+        delay(500);
+        break;
+      }
+    }
   }
-  else if (boardDriver.getSensorState(4, 3)) {
-    // Game Mode 3 selected - Black AI Stockfish (Hard)
-    Serial.println("Game Mode 3 selected (Black AI Stockfish - Hard)!");
-    currentMode = MODE_GAME_3;
-    modeInitialized = false;
-    boardDriver.clearAllLEDs();
-    delay(500);
-  }
-  else if (boardDriver.getSensorState(4, 4)) {
-    // Sensor Test selected
+  
+  // Check for sensor test (row 4, col 4)
+  if (boardDriver.getSensorState(4, 4)) {
     Serial.println("Sensor Test mode selected!");
     currentMode = MODE_SENSOR_TEST;
     modeInitialized = false;
+    whiteSelected = false;
+    blackSelected = false;
     boardDriver.clearAllLEDs();
     delay(500);
   }
-  else if (boardDriver.getSensorState(3, 2)) {
-    // Bot vs Bot selected
-    Serial.println("Bot vs Bot mode selected (AI vs AI)!");
-    currentMode = MODE_BOT_VS_BOT;
+  
+  // If both sides are selected, start the unified game
+  if (whiteSelected && blackSelected) {
+    Serial.println("Both players selected! Starting unified chess game...");
+    Serial.print("White: ");
+    switch(selectedWhitePlayer) {
+      case PLAYER_HUMAN: Serial.println("Human"); break;
+      case PLAYER_BOT_EASY: Serial.println("Easy AI"); break;
+      case PLAYER_BOT_MEDIUM: Serial.println("Medium AI"); break;
+      case PLAYER_BOT_HARD: Serial.println("Hard AI"); break;
+    }
+    Serial.print("Black: ");
+    switch(selectedBlackPlayer) {
+      case PLAYER_HUMAN: Serial.println("Human"); break;
+      case PLAYER_BOT_EASY: Serial.println("Easy AI"); break;
+      case PLAYER_BOT_MEDIUM: Serial.println("Medium AI"); break;
+      case PLAYER_BOT_HARD: Serial.println("Hard AI"); break;
+    }
+    
+    // Start unified game mode
+    currentMode = MODE_UNIFIED_GAME;
     modeInitialized = false;
+    whiteSelected = false;
+    blackSelected = false;
     boardDriver.clearAllLEDs();
     delay(500);
   }
@@ -457,25 +494,13 @@ void handleGameSelection() {
 
 void initializeSelectedMode(GameMode mode) {
   switch (mode) {
-    case MODE_CHESS_MOVES:
-      Serial.println("Starting Chess Moves (Human vs Human)...");
-      chessMoves.begin();
-      break;
-    case MODE_CHESS_BOT:
-      Serial.println("Starting Chess Bot (Player White vs AI Black - Medium)...");
-      chessBot.begin();
-      break;
     case MODE_SENSOR_TEST:
       Serial.println("Starting Sensor Test...");
       sensorTest.begin();
       break;
-    case MODE_GAME_3:
-      Serial.println("Starting Black AI Stockfish (Player Black vs AI White - Hard)...");
-      chessBot3.begin();
-      break;
-    case MODE_BOT_VS_BOT:
-      Serial.println("Starting Bot vs Bot (AI vs AI)...");
-      chessBotVsBot.begin();
+    case MODE_UNIFIED_GAME:
+      Serial.println("Starting Unified Chess Game...");
+      unifiedGame.begin(selectedWhitePlayer, selectedBlackPlayer);
       break;
     default:
       currentMode = MODE_SELECTION;
@@ -495,20 +520,8 @@ void displayPauseModeComparison() {
   bool hasBoardState = false;
   
   switch (currentMode) {
-    case MODE_CHESS_MOVES:
-      chessMoves.getBoardState(boardState);
-      hasBoardState = true;
-      break;
-    case MODE_CHESS_BOT:
-      chessBot.getBoardState(boardState);
-      hasBoardState = true;
-      break;
-    case MODE_GAME_3:
-      chessBot3.getBoardState(boardState);
-      hasBoardState = true;
-      break;
-    case MODE_BOT_VS_BOT:
-      chessBotVsBot.getBoardState(boardState);
+    case MODE_UNIFIED_GAME:
+      unifiedGame.getBoardState(boardState);
       hasBoardState = true;
       break;
     default:

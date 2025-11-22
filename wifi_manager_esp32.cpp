@@ -19,6 +19,9 @@ WiFiManagerESP32::WiFiManagerESP32() : server(AP_PORT) {
     moveDetectionPaused = false;
     pendingUndoRequest = false;
     lastUndoSucceeded = false;
+    selectedWhitePlayer = PLAYER_HUMAN;
+    selectedBlackPlayer = PLAYER_HUMAN;
+    playerSelectionReady = false;
     
     // Initialize board state to empty
     for (int row = 0; row < 8; row++) {
@@ -179,30 +182,100 @@ void WiFiManagerESP32::handleConfigSubmit() {
 }
 
 void WiFiManagerESP32::handleGameSelection() {
-    // Parse game mode selection
-    int mode = 0;
+    // Parse unified game player selection (JSON format)
+    PlayerType whitePlayer = PLAYER_HUMAN;
+    PlayerType blackPlayer = PLAYER_HUMAN;
     
-    if (server.hasArg("gamemode")) {
-        mode = server.arg("gamemode").toInt();
-    } else if (server.hasArg("plain")) {
-        // Try to parse from plain body
+    if (server.hasArg("plain")) {
         String body = server.arg("plain");
-        int modeStart = body.indexOf("gamemode=");
-        if (modeStart >= 0) {
-            int modeEnd = body.indexOf("&", modeStart);
-            if (modeEnd < 0) modeEnd = body.length();
-            String selectedMode = body.substring(modeStart + 9, modeEnd);
-            mode = selectedMode.toInt();
+        // Try to parse JSON: {"white":0,"black":1} or form data: white=0&black=1
+        int whiteStart = body.indexOf("\"white\":");
+        int blackStart = body.indexOf("\"black\":");
+        
+        if (whiteStart >= 0 && blackStart >= 0) {
+            // JSON format
+            whiteStart += 8; // Skip "white":
+            int whiteEnd = body.indexOf(",", whiteStart);
+            if (whiteEnd < 0) whiteEnd = body.indexOf("}", whiteStart);
+            String whiteStr = body.substring(whiteStart, whiteEnd);
+            whiteStr.trim();
+            whitePlayer = (PlayerType)whiteStr.toInt();
+            
+            blackStart += 8; // Skip "black":
+            int blackEnd = body.indexOf("}", blackStart);
+            if (blackEnd < 0) blackEnd = body.length();
+            String blackStr = body.substring(blackStart, blackEnd);
+            blackStr.trim();
+            blackPlayer = (PlayerType)blackStr.toInt();
+        } else {
+            // Form data format: white=0&black=1 or legacy gamemode=X
+            int whiteIdx = body.indexOf("white=");
+            int blackIdx = body.indexOf("black=");
+            int modeIdx = body.indexOf("gamemode=");
+            
+            if (whiteIdx >= 0 && blackIdx >= 0) {
+                whiteIdx += 6;
+                int whiteEnd = body.indexOf("&", whiteIdx);
+                if (whiteEnd < 0) whiteEnd = body.length();
+                whitePlayer = (PlayerType)body.substring(whiteIdx, whiteEnd).toInt();
+                
+                blackIdx += 6;
+                int blackEnd = body.indexOf("&", blackIdx);
+                if (blackEnd < 0) blackEnd = body.length();
+                blackPlayer = (PlayerType)body.substring(blackIdx, blackEnd).toInt();
+            } else if (modeIdx >= 0) {
+                // Legacy mode selection - map to unified game
+                modeIdx += 9;
+                int modeEnd = body.indexOf("&", modeIdx);
+                if (modeEnd < 0) modeEnd = body.length();
+                int mode = body.substring(modeIdx, modeEnd).toInt();
+                
+                // Map old modes to unified game
+                if (mode == 1) {
+                    whitePlayer = PLAYER_HUMAN;
+                    blackPlayer = PLAYER_HUMAN;
+                } else if (mode == 2) {
+                    whitePlayer = PLAYER_HUMAN;
+                    blackPlayer = PLAYER_BOT_MEDIUM;
+                } else if (mode == 3) {
+                    whitePlayer = PLAYER_BOT_MEDIUM;
+                    blackPlayer = PLAYER_HUMAN;
+                } else if (mode == 5) {
+                    whitePlayer = PLAYER_BOT_MEDIUM;
+                    blackPlayer = PLAYER_BOT_MEDIUM;
+                }
+            }
+        }
+    } else if (server.hasArg("white") && server.hasArg("black")) {
+        whitePlayer = (PlayerType)server.arg("white").toInt();
+        blackPlayer = (PlayerType)server.arg("black").toInt();
+    } else if (server.hasArg("gamemode")) {
+        // Legacy mode selection
+        int mode = server.arg("gamemode").toInt();
+        if (mode == 1) {
+            whitePlayer = PLAYER_HUMAN;
+            blackPlayer = PLAYER_HUMAN;
+        } else if (mode == 2) {
+            whitePlayer = PLAYER_HUMAN;
+            blackPlayer = PLAYER_BOT_MEDIUM;
+        } else if (mode == 3) {
+            whitePlayer = PLAYER_BOT_MEDIUM;
+            blackPlayer = PLAYER_HUMAN;
+        } else if (mode == 5) {
+            whitePlayer = PLAYER_BOT_MEDIUM;
+            blackPlayer = PLAYER_BOT_MEDIUM;
         }
     }
     
-    Serial.print("Game mode selected via web: ");
-    Serial.println(mode);
+    Serial.print("Player selection via web - White: ");
+    Serial.print(whitePlayer);
+    Serial.print(", Black: ");
+    Serial.println(blackPlayer);
     
-    // Store the selected game mode
-    gameMode = String(mode);
+    // Store the selected players
+    setSelectedPlayers(whitePlayer, blackPlayer);
     
-    String response = "{\"status\":\"success\",\"message\":\"Game mode selected\",\"mode\":" + String(mode) + "}";
+    String response = "{\"status\":\"success\",\"message\":\"Game players selected\",\"white\":" + String(whitePlayer) + ",\"black\":" + String(blackPlayer) + "}";
     sendResponse(response, "application/json");
 }
 
@@ -282,6 +355,23 @@ int WiFiManagerESP32::getSelectedGameMode() {
 
 void WiFiManagerESP32::resetGameSelection() {
     gameMode = "0";
+    playerSelectionReady = false;
+    selectedWhitePlayer = PLAYER_HUMAN;
+    selectedBlackPlayer = PLAYER_HUMAN;
+}
+
+PlayerType WiFiManagerESP32::getSelectedWhitePlayer() {
+    return playerSelectionReady ? selectedWhitePlayer : PLAYER_HUMAN;
+}
+
+PlayerType WiFiManagerESP32::getSelectedBlackPlayer() {
+    return playerSelectionReady ? selectedBlackPlayer : PLAYER_HUMAN;
+}
+
+void WiFiManagerESP32::setSelectedPlayers(PlayerType white, PlayerType black) {
+    selectedWhitePlayer = white;
+    selectedBlackPlayer = black;
+    playerSelectionReady = true;
 }
 
 void WiFiManagerESP32::updateBoardState(char newBoardState[8][8]) {

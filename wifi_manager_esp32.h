@@ -14,6 +14,7 @@
 // 2. WiFiNINA library is not interfering (you may need to temporarily remove it)
 #include <WiFi.h>
 #include <WebServer.h>
+#include "unified_chess_game.h"
 
 // ---------------------------
 // WiFi Configuration
@@ -55,6 +56,11 @@ private:
     bool pendingUndoRequest;
     bool lastUndoSucceeded;
     
+    // Unified game player selection
+    PlayerType selectedWhitePlayer;
+    PlayerType selectedBlackPlayer;
+    bool playerSelectionReady;
+    
     // WiFi connection methods
     bool connectToWiFi(String ssid, String password);
     bool startAccessPoint();
@@ -95,9 +101,15 @@ public:
     String getGameMode() { return gameMode; }
     String getStartupType() { return startupType; }
     
-    // Game selection via web
+    // Game selection via web (legacy - for compatibility)
     int getSelectedGameMode();
     void resetGameSelection();
+    
+    // Unified game selection via web
+    bool hasPlayerSelection() { return playerSelectionReady; }
+    PlayerType getSelectedWhitePlayer();
+    PlayerType getSelectedBlackPlayer();
+    void setSelectedPlayers(PlayerType white, PlayerType black);
     
     // Board state management
     void updateBoardState(char newBoardState[8][8]);
