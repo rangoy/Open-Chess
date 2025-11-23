@@ -12,15 +12,17 @@
 #endif
 
 // Expected initial configuration
+// Note: With corrected mapping, row 0 = rank 1, row 7 = rank 8
+// Code convention: uppercase = white, lowercase = black
 const char UnifiedChessGame::INITIAL_BOARD[8][8] = {
-  {'R', 'N', 'B', 'K', 'Q', 'B', 'N', 'R'},  // row 0 (rank 8 - black pieces at top)
-  {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},  // row 1 (rank 7)
-  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 2 (rank 6)
-  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 3 (rank 5)
-  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 4 (rank 4)
-  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 5 (rank 3)
-  {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},    // row 6 (rank 2)
-  {'r', 'n', 'b', 'k', 'q', 'b', 'n', 'r'}     // row 7 (rank 1 - white pieces at bottom)
+  {'R', 'N', 'B', 'K', 'Q', 'B', 'N', 'R'},  // row 0 (rank 1 - white pieces at bottom)
+  {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},  // row 1 (rank 2)
+  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 2 (rank 3)
+  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 3 (rank 4)
+  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 4 (rank 5)
+  {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 5 (rank 6)
+  {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},    // row 6 (rank 7)
+  {'r', 'n', 'b', 'k', 'q', 'b', 'n', 'r'}     // row 7 (rank 8 - black pieces at top)
 };
 
 UnifiedChessGame::UnifiedChessGame(BoardDriver* boardDriver, ChessEngine* chessEngine) {
@@ -1145,9 +1147,11 @@ bool UnifiedChessGame::parseMove(String move, int &fromRow, int &fromCol, int &t
     if (fromFile < 'a' || fromFile > 'h' || toFile < 'a' || toFile > 'h') return false;
     if (fromRank < '1' || fromRank > '8' || toRank < '1' || toRank > '8') return false;
     
-    fromCol = fromFile - 'a';
+    // Columns are reversed: col = 7 - (file - 'a')
+    // Rows are reversed: row = rank - 1 (formula same, but row 0 = rank 1 now)
+    fromCol = 7 - (fromFile - 'a');
     fromRow = (fromRank - '0') - 1;
-    toCol = toFile - 'a';
+    toCol = 7 - (toFile - 'a');
     toRow = (toRank - '0') - 1;
     
     return (fromRow >= 0 && fromRow < 8 && fromCol >= 0 && fromCol < 8 &&
@@ -1185,7 +1189,8 @@ void UnifiedChessGame::printCurrentBoard() {
     Serial.println("=== CURRENT BOARD STATE ===");
     Serial.println("  a b c d e f g h");
     for (int row = 0; row < 8; row++) {
-        Serial.print(8 - row);
+        // Rows are reversed: rank = 1 + row
+        Serial.print(1 + row);
         Serial.print(" ");
         for (int col = 0; col < 8; col++) {
             char piece = board[row][col];
@@ -1197,7 +1202,8 @@ void UnifiedChessGame::printCurrentBoard() {
             }
         }
         Serial.print(" ");
-        Serial.println(8 - row);
+        // Rows are reversed: rank = 1 + row
+        Serial.println(1 + row);
     }
     Serial.println("  a b c d e f g h");
     Serial.println("========================");

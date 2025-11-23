@@ -220,9 +220,10 @@ bool ChessEngine::isValidMove(const char board[8][8], int fromRow, int fromCol, 
 }
 
 // Check if a pawn move results in promotion
+// With corrected mapping: row 0 = rank 1, row 7 = rank 8
 bool ChessEngine::isPawnPromotion(char piece, int targetRow) {
-    if (piece == 'P' && targetRow == 7) return true;  // White pawn reaches 8th rank
-    if (piece == 'p' && targetRow == 0) return true;  // Black pawn reaches 1st rank
+    if (piece == 'P' && targetRow == 7) return true;  // White pawn reaches 8th rank (row 7)
+    if (piece == 'p' && targetRow == 0) return true;  // Black pawn reaches 1st rank (row 0)
     return false;
 }
 
@@ -233,19 +234,23 @@ char ChessEngine::getPromotedPiece(char piece) {
 
 // Utility function to print a move in readable format
 void ChessEngine::printMove(int fromRow, int fromCol, int toRow, int toCol) {
-    Serial.print((char)('a' + fromCol));
-    Serial.print(fromRow + 1);
+    // Columns are reversed: file = 'a' + (7 - col)
+    // Rows are reversed: rank = 1 + row
+    Serial.print((char)('a' + (7 - fromCol)));
+    Serial.print(1 + fromRow);
     Serial.print(" to ");
-    Serial.print((char)('a' + toCol));
-    Serial.println(toRow + 1);
+    Serial.print((char)('a' + (7 - toCol)));
+    Serial.println(1 + toRow);
 }
 
 // Convert algebraic notation file (a-h) to column index (0-7)
+// Columns are reversed: col = 7 - (file - 'a')
 char ChessEngine::algebraicToCol(char file) {
-    return file - 'a';
+    return 7 - (file - 'a');
 }
 
 // Convert algebraic notation rank (1-8) to row index (0-7)
+// Rows are reversed: row = rank - 1 (formula same, but row 0 = rank 1 now)
 int ChessEngine::algebraicToRow(int rank) {
     return rank - 1;
 }

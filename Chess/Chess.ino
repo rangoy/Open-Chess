@@ -54,15 +54,17 @@ bool sensorState[8][8];
 bool sensorPrev[8][8];
 
 // Expected initial configuration (as printed in the grid)
+// Note: With corrected mapping, row 0 = rank 1, row 7 = rank 8
+// Code convention: uppercase = white, lowercase = black
 char initialBoard[8][8] = {
-  {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'},  // row 0 (rank 1)
+  {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'},  // row 0 (rank 1 - white pieces at bottom)
   {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},  // row 1 (rank 2)
   {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 2 (rank 3)
   {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 3 (rank 4)
   {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 4 (rank 5)
   {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},    // row 5 (rank 6)
   {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},    // row 6 (rank 7)
-  {'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'}     // row 7 (rank 8)
+  {'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'}     // row 7 (rank 8 - black pieces at top)
 };
 
 // Internal board state for gameplay (initialized from initialBoard)
@@ -152,9 +154,11 @@ void loop() {
         // Skip empty squares
         if (piece == ' ') continue;
         
+        // Columns are reversed: file = 'a' + (7 - col)
+        // Rows are reversed: rank = 1 + row
         Serial.print("Piece lifted from ");
-        Serial.print((char)('a' + col));
-        Serial.println(row + 1);
+        Serial.print((char)('a' + (7 - col)));
+        Serial.println(1 + row);
         
         // Generate possible moves
         int moveCount = 0;

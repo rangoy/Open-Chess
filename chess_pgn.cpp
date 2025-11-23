@@ -66,7 +66,8 @@ bool ChessPGN::isAmbiguousMove(int fromRow, int fromCol, int toRow, int toCol, c
 String ChessPGN::getDisambiguation(int fromRow, int fromCol, int toRow, int toCol, char piece, const char board[8][8]) {
     // Simple disambiguation - use file (column) if ambiguous
     // In a full implementation, we'd check if file or rank disambiguation is needed
-    return String((char)('a' + fromCol));
+    // Columns are reversed: file = 'a' + (7 - col)
+    return String((char)('a' + (7 - fromCol)));
 }
 
 String ChessPGN::moveToPGN(int fromRow, int fromCol, int toRow, int toCol, char piece, char capturedPiece, char promotedPiece, const char board[8][8]) {
@@ -88,14 +89,17 @@ String ChessPGN::moveToPGN(int fromRow, int fromCol, int toRow, int toCol, char 
     // Capture indicator
     if (capturedPiece != ' ') {
         if (isPawn) {
-            pgn += (char)('a' + fromCol);  // Source file for pawn captures
+            // Columns are reversed: file = 'a' + (7 - col)
+            pgn += (char)('a' + (7 - fromCol));  // Source file for pawn captures
         }
         pgn += "x";
     }
     
     // Destination square
-    pgn += (char)('a' + toCol);
-    pgn += (char)('1' + (7 - toRow));  // Convert row to rank (row 0 = rank 8, row 7 = rank 1)
+    // Columns are reversed: file = 'a' + (7 - col)
+    // Rows are reversed: rank = 1 + row
+    pgn += (char)('a' + (7 - toCol));
+    pgn += (char)('0' + (1 + toRow));  // Convert row to rank (row 0 = rank 1, row 7 = rank 8)
     
     // Promotion
     if (promotedPiece != '\0' && promotedPiece != ' ') {
@@ -211,10 +215,12 @@ String ChessPGN::getMoveHistory() {
         }
         
         // Simple move notation: from-to (e.g., "e2e4")
-        history += (char)('a' + entry.fromCol);
-        history += (char)('1' + (7 - entry.fromRow));
-        history += (char)('a' + entry.toCol);
-        history += (char)('1' + (7 - entry.toRow));
+        // Columns are reversed: file = 'a' + (7 - col)
+        // Rows are reversed: rank = 1 + row
+        history += (char)('a' + (7 - entry.fromCol));
+        history += (char)('0' + (1 + entry.fromRow));
+        history += (char)('a' + (7 - entry.toCol));
+        history += (char)('0' + (1 + entry.toRow));
         
         if (entry.promotedPiece != '\0' && entry.promotedPiece != ' ') {
             history += "=";
