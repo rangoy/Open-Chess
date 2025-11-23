@@ -224,6 +224,41 @@ function updateBoardView() {
         });
 }
 
+// Parse FEN string and return board array
+// FEN format: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+function parseFEN(fen) {
+    if (!fen || fen.length === 0) return null;
+    
+    // Split FEN into parts (we only need the board part, first section)
+    const parts = fen.split(' ');
+    const boardFEN = parts[0];
+    
+    const board = Array(8).fill(null).map(() => Array(8).fill(''));
+    const ranks = boardFEN.split('/');
+    
+    // FEN ranks go from 8 to 1 (top to bottom), but our array is 0-7 (top to bottom)
+    for (let rankIdx = 0; rankIdx < 8; rankIdx++) {
+        const rank = ranks[rankIdx];
+        let fileIdx = 0;
+        
+        for (let i = 0; i < rank.length && fileIdx < 8; i++) {
+            const char = rank[i];
+            
+            if (char >= '1' && char <= '8') {
+                // Empty squares
+                const emptyCount = parseInt(char);
+                fileIdx += emptyCount;
+            } else {
+                // Piece
+                board[rankIdx][fileIdx] = char;
+                fileIdx++;
+            }
+        }
+    }
+    
+    return board;
+}
+
 function updateBoardDisplay(data) {
     const statusEl = document.getElementById('board-status');
     const containerEl = document.getElementById('board-container');
@@ -234,17 +269,23 @@ function updateBoardDisplay(data) {
         containerEl.style.display = 'block';
         noBoardEl.style.display = 'none';
 
-        // Update board squares
-        for (let row = 0; row < 8; row++) {
-            for (let col = 0; col < 8; col++) {
-                const piece = data.board[row][col];
-                const square = document.getElementById('square-' + row + '-' + col);
-                if (piece && piece !== '') {
-                    const isWhite = piece === piece.toUpperCase();
-                    const symbol = getPieceSymbol(piece);
-                    square.innerHTML = '<span class="piece ' + (isWhite ? 'white' : 'black') + '">' + symbol + '</span>';
-                } else {
-                    square.innerHTML = '';
+        // Parse and display board from FEN
+        if (data.fen && data.fen.length > 0) {
+            const board = parseFEN(data.fen);
+            if (board) {
+                // Update board squares
+                for (let row = 0; row < 8; row++) {
+                    for (let col = 0; col < 8; col++) {
+                        const piece = board[row][col];
+                        const square = document.getElementById('square-' + row + '-' + col);
+                        if (piece && piece !== '' && piece !== ' ') {
+                            const isWhite = piece === piece.toUpperCase();
+                            const symbol = getPieceSymbol(piece);
+                            square.innerHTML = '<span class="piece ' + (isWhite ? 'white' : 'black') + '">' + symbol + '</span>';
+                        } else {
+                            square.innerHTML = '';
+                        }
+                    }
                 }
             }
         }
@@ -328,8 +369,13 @@ function initBoardEdit() {
     fetch('/api/board')
         .then(response => response.json())
         .then(data => {
-            if (data.valid) {
-                renderEditBoard(data.board);
+            if (data.valid && data.fen && data.fen.length > 0) {
+                const board = parseFEN(data.fen);
+                if (board) {
+                    renderEditBoard(board);
+                } else {
+                    renderEditBoard(Array(8).fill(null).map(() => Array(8).fill('')));
+                }
             } else {
                 renderEditBoard(Array(8).fill(null).map(() => Array(8).fill('')));
             }
@@ -359,8 +405,11 @@ function initBoardEdit() {
             fetch('/api/board')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.valid) {
-                        updateEditBoard(data.board);
+                    if (data.valid && data.fen && data.fen.length > 0) {
+                        const board = parseFEN(data.fen);
+                        if (board) {
+                            updateEditBoard(board);
+                        }
                     }
                 })
                 .catch(err => console.error('Error refreshing board:', err));

@@ -416,26 +416,6 @@ void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation, S
 
 String WiFiManager::generateBoardJSON() {
     String json = "{";
-    json += "\"board\":[";
-    
-    for (int row = 0; row < 8; row++) {
-        json += "[";
-        for (int col = 0; col < 8; col++) {
-            char piece = boardState[row][col];
-            if (piece == ' ') {
-                json += "\"\"";
-            } else {
-                json += "\"";
-                json += String(piece);
-                json += "\"";
-            }
-            if (col < 7) json += ",";
-        }
-        json += "]";
-        if (row < 7) json += ",";
-    }
-    
-    json += "],";
     json += "\"valid\":" + String(boardStateValid ? "true" : "false");
     json += ",\"evaluation\":" + String(boardEvaluation, 2);
     if (boardPGN.length() > 0) {
