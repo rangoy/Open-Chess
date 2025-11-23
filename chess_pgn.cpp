@@ -214,10 +214,15 @@ String ChessPGN::getPGN() {
         if (!entry.valid) continue;
         
         if (entry.isWhiteMove) {
-            if (moveNumber > 1) pgn += " ";
+            // White move: add move number (e.g., "1.", "2.", etc.)
+            // Add space before move number if not the first move in the entire game
+            if (i > 0 && moveHistory[i-1].valid) {
+                pgn += " ";
+            }
             pgn += String(moveNumber);
             pgn += ".";
         } else {
+            // Black move: just add space (move number was already added for white)
             pgn += " ";
         }
         
@@ -231,6 +236,7 @@ String ChessPGN::getPGN() {
         pgn += moveToPGN(entry.fromRow, entry.fromCol, entry.toRow, entry.toCol, 
                         entry.piece, entry.capturedPiece, entry.promotedPiece, board);
         
+        // Increment move number after black's move (completing a full move pair)
         if (!entry.isWhiteMove) {
             moveNumber++;
         }

@@ -263,6 +263,16 @@ function updateBoardDisplay(data) {
         } else {
             pgnSection.style.display = 'none';
         }
+        
+        // Update FEN display
+        const fenSection = document.getElementById('fen-section');
+        const fenDisplay = document.getElementById('fen-display');
+        if (data.fen !== undefined && data.fen && data.fen.length > 0) {
+            fenSection.style.display = 'block';
+            fenDisplay.textContent = data.fen;
+        } else {
+            fenSection.style.display = 'none';
+        }
     } else {
         statusEl.textContent = 'Board state: Not available';
         containerEl.style.display = 'none';

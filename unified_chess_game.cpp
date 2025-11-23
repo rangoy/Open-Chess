@@ -429,10 +429,13 @@ void UnifiedChessGame::update() {
                             promotedPiece = _chessEngine->getPromotedPiece(piece);
                         }
                         
+                        // Capture isWhiteTurn BEFORE processMove toggles it
+                        bool moveWasWhite = isWhiteTurn;
+                        
                         processMove(row, col, targetRow, targetCol, piece);
                         
                         if (_pgnTracker) {
-                            _pgnTracker->addMove(row, col, targetRow, targetCol, piece, capturedPiece, promotedPiece, isWhiteTurn, board);
+                            _pgnTracker->addMove(row, col, targetRow, targetCol, piece, capturedPiece, promotedPiece, moveWasWhite, board);
                         }
                         
                         checkForPromotion(targetRow, targetCol, piece);
@@ -967,8 +970,11 @@ void UnifiedChessGame::updateMoveCompletion() {
                 _boardDriver->captureAnimation();
             }
             
+            // Capture isWhiteTurn BEFORE toggling it (bot moves don't use processMove, so we toggle manually)
+            bool moveWasWhite = isWhiteTurn;
+            
             if (_pgnTracker) {
-                _pgnTracker->addMove(fromRow, fromCol, toRow, toCol, piece, capturedPiece, promotedPiece, isWhiteTurn, board);
+                _pgnTracker->addMove(fromRow, fromCol, toRow, toCol, piece, capturedPiece, promotedPiece, moveWasWhite, board);
             }
             
             // Flash confirmation
