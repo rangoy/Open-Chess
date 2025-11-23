@@ -229,6 +229,16 @@ void loop() {
   if (wifiManager.getPendingBoardEdit(editBoard)) {
     Serial.println("Applying board edit from WiFi interface...");
     
+    // Debug: Print first few squares of received board
+    Serial.println("DEBUG: Received board (first row, first 4 cols):");
+    for (int c = 0; c < 4; c++) {
+      Serial.print("  [0][");
+      Serial.print(c);
+      Serial.print("] = '");
+      Serial.print(editBoard[0][c]);
+      Serial.println("'");
+    }
+    
     if (currentMode == MODE_UNIFIED_GAME && modeInitialized) {
       unifiedGame.setBoardState(editBoard);
       Serial.println("Board edit applied to Unified Game mode");

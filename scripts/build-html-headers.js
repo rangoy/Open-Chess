@@ -154,91 +154,23 @@ async function buildAll() {
   console.log('Building HTML/JS headers...\n');
   
   const fileMappings = [
-    // CSS files
+    // SPA files
     {
-      source: join(config.htmlSourceDir, 'common_styles.css'),
-      output: join(config.htmlOutputDir, 'common_styles.h'),
-      macro: 'HTML_COMMON_STYLES',
-      processor: processCSS,
-    },
-    {
-      source: join(config.htmlSourceDir, 'game_selection_styles.css'),
-      output: join(config.htmlOutputDir, 'game_selection_styles.h'),
-      macro: 'HTML_GAME_SELECTION_STYLES',
-      processor: processCSS,
-    },
-    {
-      source: join(config.htmlSourceDir, 'board_view_styles.css'),
-      output: join(config.htmlOutputDir, 'board_view_styles.h'),
-      macro: 'HTML_BOARD_VIEW_STYLES',
-      processor: processCSS,
-    },
-    {
-      source: join(config.htmlSourceDir, 'board_edit_styles.css'),
-      output: join(config.htmlOutputDir, 'board_edit_styles.h'),
-      macro: 'HTML_BOARD_EDIT_STYLES',
-      processor: processCSS,
-    },
-    // HTML files
-    {
-      source: join(config.htmlSourceDir, 'game_selection.html'),
-      output: join(config.htmlOutputDir, 'game_selection.html.h'),
-      macro: 'HTML_GAME_SELECTION_CONTENT',
+      source: join(config.htmlSourceDir, 'spa.html'),
+      output: join(config.htmlOutputDir, 'spa.html.h'),
+      macro: 'SPA_HTML',
       processor: processHTML,
     },
     {
-      source: join(config.htmlSourceDir, 'evaluation_bar.html'),
-      output: join(config.htmlOutputDir, 'evaluation_bar.html.h'),
-      macro: 'HTML_EVALUATION_BAR',
-      processor: processHTML,
+      source: join(config.htmlSourceDir, 'spa.css'),
+      output: join(config.htmlOutputDir, 'spa.css.h'),
+      macro: 'SPA_CSS',
+      processor: processCSS,
     },
     {
-      source: join(config.htmlSourceDir, 'board_view.html'),
-      output: join(config.htmlOutputDir, 'board_view.html.h'),
-      macro: 'HTML_BOARD_VIEW_CONTENT',
-      processor: processHTML,
-    },
-    {
-      source: join(config.htmlSourceDir, 'board_edit.html'),
-      output: join(config.htmlOutputDir, 'board_edit.html.h'),
-      macro: 'HTML_BOARD_EDIT_CONTENT',
-      processor: processHTML,
-    },
-    // JavaScript files
-    {
-      source: join(config.htmlSourceDir, 'game_selection.js'),
-      output: join(config.htmlOutputDir, 'game_selection_script.h'),
-      macro: 'HTML_GAME_SELECTION_SCRIPT',
-      processor: processJS,
-    },
-    {
-      source: join(config.jsSourceDir, 'piece_symbols.js'),
-      output: join(config.jsOutputDir, 'piece_symbols.js.h'),
-      macro: 'JS_PIECE_SYMBOLS',
-      processor: processJS,
-    },
-    {
-      source: join(config.jsSourceDir, 'evaluation_bar.js'),
-      output: join(config.jsOutputDir, 'evaluation_bar.js.h'),
-      macro: 'JS_EVALUATION_UPDATE',
-      processor: processJS,
-    },
-    {
-      source: join(config.jsSourceDir, 'board_update.js'),
-      output: join(config.jsOutputDir, 'board_update.js.h'),
-      macro: 'JS_BOARD_UPDATE',
-      processor: processJS,
-    },
-    {
-      source: join(config.jsSourceDir, 'board_view.js'),
-      output: join(config.jsOutputDir, 'board_view.js.h'),
-      macro: 'JS_BOARD_VIEW',
-      processor: processJS,
-    },
-    {
-      source: join(config.jsSourceDir, 'board_edit.js'),
-      output: join(config.jsOutputDir, 'board_edit.js.h'),
-      macro: 'JS_BOARD_EDIT',
+      source: join(config.jsSourceDir, 'spa.js'),
+      output: join(config.jsOutputDir, 'spa.js.h'),
+      macro: 'SPA_JS',
       processor: processJS,
     },
   ];

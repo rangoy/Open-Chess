@@ -69,9 +69,7 @@ private:
     
     // Web interface methods
     String generateWebPage();
-    String generateGameSelectionPage();
-    String generateBoardViewPage();
-    String generateBoardEditPage();
+    void handleGetConfig();
     String generateBoardJSON();
     void handleRoot();
     void handleGameSelection();

@@ -59,9 +59,6 @@ private:
     
     // Web interface methods
     String generateWebPage();
-    String generateGameSelectionPage();
-    String generateBoardViewPage();
-    String generateBoardEditPage();
     String generateBoardJSON();
     void handleConfigSubmit(WiFiClient& client, String request);
     void handleGameSelection(WiFiClient& client, String request);

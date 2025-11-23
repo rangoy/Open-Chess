@@ -301,13 +301,7 @@ void WiFiManager::handleClient() {
 
 String WiFiManager::generateWebPage() {
     using namespace WiFiHTMLTemplates;
-    return generateConfigPage(wifiSSID, wifiPassword, lichessToken, gameMode, startupType, 
-                              getConnectionStatus(), apMode);
-}
-
-String WiFiManager::generateGameSelectionPage() {
-    using namespace WiFiHTMLTemplates;
-    return WiFiHTMLTemplates::generateGameSelectionPage();
+    return generateSPAHTML();
 }
 
 void WiFiManager::handleGameSelection(WiFiClient& client, String body) {
@@ -454,15 +448,6 @@ String WiFiManager::generateBoardJSON() {
     return json;
 }
 
-String WiFiManager::generateBoardViewPage() {
-    using namespace WiFiHTMLTemplates;
-    return generateBoardViewPageTemplate();
-}
-
-String WiFiManager::generateBoardEditPage() {
-    using namespace WiFiHTMLTemplates;
-    return generateBoardEditPageTemplate();
-}
 
 void WiFiManager::handleBoardEdit(WiFiClient& client, String request, String body) {
     parseBoardEditData(body);

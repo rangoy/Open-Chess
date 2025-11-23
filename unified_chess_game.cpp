@@ -476,6 +476,18 @@ void UnifiedChessGame::updateBotState() {
         return;
     }
     
+    // Debug: Log current bot state
+    static unsigned long lastStateLog = 0;
+    if (millis() - lastStateLog > 2000) {
+        Serial.print("DEBUG: updateBotState() - botState=");
+        Serial.print(botState);
+        Serial.print(", botThinking=");
+        Serial.print(botThinking);
+        Serial.print(", wifiConnected=");
+        Serial.println(wifiConnected);
+        lastStateLog = millis();
+    }
+    
     if (botState == BOT_THINKING) {
         // Show thinking animation
         showBotThinking();
@@ -563,15 +575,94 @@ void UnifiedChessGame::updateBotState() {
                             
                             int fromRow, fromCol, toRow, toCol;
                             if (parseMove(bestMove, fromRow, fromCol, toRow, toCol)) {
+                                Serial.print("DEBUG: Parsed move coordinates - fromRow=");
+                                Serial.print(fromRow);
+                                Serial.print(", fromCol=");
+                                Serial.print(fromCol);
+                                Serial.print(", toRow=");
+                                Serial.print(toRow);
+                                Serial.print(", toCol=");
+                                Serial.println(toCol);
+                                
+                                // Debug: Print board state around the source square
+                                Serial.println("DEBUG: Board state around source:");
+                                for (int r = fromRow - 1; r <= fromRow + 1; r++) {
+                                    if (r >= 0 && r < 8) {
+                                        Serial.print("  Row ");
+                                        Serial.print(r);
+                                        Serial.print(": ");
+                                        for (int c = fromCol - 1; c <= fromCol + 1; c++) {
+                                            if (c >= 0 && c < 8) {
+                                                char p = board[r][c];
+                                                if (p == ' ') p = '.';
+                                                Serial.print(p);
+                                                Serial.print(" ");
+                                            }
+                                        }
+                                        Serial.println();
+                                    }
+                                }
+                                
                                 char piece = board[fromRow][fromCol];
+                                Serial.print("DEBUG: Piece at source: '");
+                                Serial.print(piece);
+                                Serial.print("' (isWhiteTurn=");
+                                Serial.print(isWhiteTurn);
+                                Serial.print(", isWhite=");
+                                Serial.print(piece >= 'A' && piece <= 'Z');
+                                Serial.print(", isBlack=");
+                                Serial.print(piece >= 'a' && piece <= 'z');
+                                Serial.println(")");
+                                
+                                // Try to find the piece on the board
+                                if (piece == ' ') {
+                                    Serial.println("DEBUG: Piece not found at expected location, searching board...");
+                                    char expectedPiece = isWhiteTurn ? 'P' : 'p'; // Default to pawn
+                                    bool found = false;
+                                    for (int r = 0; r < 8 && !found; r++) {
+                                        for (int c = 0; c < 8 && !found; c++) {
+                                            if (board[r][c] == expectedPiece) {
+                                                Serial.print("DEBUG: Found ");
+                                                Serial.print(expectedPiece);
+                                                Serial.print(" at row=");
+                                                Serial.print(r);
+                                                Serial.print(", col=");
+                                                Serial.print(c);
+                                                Serial.print(" (file=");
+                                                Serial.print((char)('a' + (7 - c)));
+                                                Serial.print(", rank=");
+                                                Serial.print(1 + r);
+                                                Serial.println(")");
+                                            }
+                                        }
+                                    }
+                                }
+                                
                                 bool isCorrectPiece = (isWhiteTurn && piece >= 'A' && piece <= 'Z') || 
                                                       (!isWhiteTurn && piece >= 'a' && piece <= 'z');
                                 
                                 if (isCorrectPiece && piece != ' ') {
+                                    Serial.println("DEBUG: Piece is correct, calling executeBotMove()");
                                     // Start move execution
                                     executeBotMove(fromRow, fromCol, toRow, toCol);
+                                    Serial.print("DEBUG: executeBotMove() returned, botState=");
+                                    Serial.println(botState);
                                     return;
+                                } else {
+                                    Serial.println("DEBUG: ERROR - Piece is not correct or empty!");
+                                    Serial.print("  isCorrectPiece=");
+                                    Serial.print(isCorrectPiece);
+                                    Serial.print(", piece='");
+                                    Serial.print(piece);
+                                    Serial.println("'");
+                                    // Don't reset state, let it try again
+                                    botState = BOT_IDLE;
+                                    botThinking = false;
                                 }
+                            } else {
+                                Serial.println("DEBUG: ERROR - Failed to parse move!");
+                                botState = BOT_IDLE;
+                                botThinking = false;
                             }
                         }
                     }
@@ -670,7 +761,12 @@ void UnifiedChessGame::updateBotState() {
         }
     } else if (botState == BOT_WAITING_FOR_PICKUP || botState == BOT_WAITING_FOR_PLACEMENT) {
         // Handle move completion (non-blocking)
+        Serial.print("DEBUG: updateBotState() calling updateMoveCompletion(), botState=");
+        Serial.println(botState);
         updateMoveCompletion();
+    } else {
+        Serial.print("DEBUG: updateBotState() - unexpected botState=");
+        Serial.println(botState);
     }
 }
 
@@ -822,7 +918,9 @@ String UnifiedChessGame::boardToFEN() {
     String fen = "";
     for (int row = 7; row >= 0; row--) {
         int emptyCount = 0;
-        for (int col = 0; col < 8; col++) {
+        // Columns are reversed: col 0 = file 'h', col 7 = file 'a'
+        // So we need to iterate from col 7 to col 0 to get files 'a' to 'h' in FEN
+        for (int col = 7; col >= 0; col--) {
             if (board[row][col] == ' ') {
                 emptyCount++;
             } else {
@@ -1242,26 +1340,26 @@ void UnifiedChessGame::checkForBothKingsMissing() {
     }
     
     // Debug: print king positions
-    if (whiteKingRow >= 0 && blackKingRow >= 0) {
-        Serial.print("DEBUG: White king at row=");
-        Serial.print(whiteKingRow);
-        Serial.print(", col=");
-        Serial.print(whiteKingCol);
-        Serial.print(" (sensor=");
-        Serial.print(_boardDriver->getSensorState(whiteKingRow, whiteKingCol) ? "present" : "missing");
-        Serial.print("), Black king at row=");
-        Serial.print(blackKingRow);
-        Serial.print(", col=");
-        Serial.print(blackKingCol);
-        Serial.print(" (sensor=");
-        Serial.print(_boardDriver->getSensorState(blackKingRow, blackKingCol) ? "present" : "missing");
-        Serial.println(")");
-    } else {
-        Serial.print("DEBUG: ");
-        if (whiteKingRow < 0) Serial.print("White king not found on board. ");
-        if (blackKingRow < 0) Serial.print("Black king not found on board. ");
-        Serial.println();
-    }
+    // if (whiteKingRow >= 0 && blackKingRow >= 0) {
+    //     Serial.print("DEBUG: White king at row=");
+    //     Serial.print(whiteKingRow);
+    //     Serial.print(", col=");
+    //     Serial.print(whiteKingCol);
+    //     Serial.print(" (sensor=");
+    //     Serial.print(_boardDriver->getSensorState(whiteKingRow, whiteKingCol) ? "present" : "missing");
+    //     Serial.print("), Black king at row=");
+    //     Serial.print(blackKingRow);
+    //     Serial.print(", col=");
+    //     Serial.print(blackKingCol);
+    //     Serial.print(" (sensor=");
+    //     Serial.print(_boardDriver->getSensorState(blackKingRow, blackKingCol) ? "present" : "missing");
+    //     Serial.println(")");
+    // } else {
+    //     Serial.print("DEBUG: ");
+    //     if (whiteKingRow < 0) Serial.print("White king not found on board. ");
+    //     if (blackKingRow < 0) Serial.print("Black king not found on board. ");
+    //     Serial.println();
+    // }
     
     // If we found both kings, check if they're physically missing (sensors detect no piece)
     if (whiteKingRow >= 0 && blackKingRow >= 0) {
