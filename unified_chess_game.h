@@ -27,6 +27,7 @@ private:
     PlayerType blackPlayer;
     bool isWhiteTurn;
     bool gameStarted;
+    bool shouldReturnToSelection;
     
     // Bot-related
     bool botThinking;
@@ -75,6 +76,7 @@ private:
     void showBotMoveIndicator(int fromRow, int fromCol, int toRow, int toCol);
     void updateMoveCompletion();  // Non-blocking move completion check
     void printCurrentBoard();
+    void checkForBothKingsMissing();
     
 public:
     UnifiedChessGame(BoardDriver* boardDriver, ChessEngine* chessEngine);
@@ -101,6 +103,10 @@ public:
     // Player type getters
     PlayerType getWhitePlayer() { return whitePlayer; }
     PlayerType getBlackPlayer() { return blackPlayer; }
+    
+    // Check if should return to game selection
+    bool shouldReturnToGameSelection() { return shouldReturnToSelection; }
+    void clearReturnToSelectionFlag() { shouldReturnToSelection = false; }
 };
 
 #endif // UNIFIED_CHESS_GAME_H

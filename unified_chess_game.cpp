@@ -34,6 +34,7 @@ UnifiedChessGame::UnifiedChessGame(BoardDriver* boardDriver, ChessEngine* chessE
     blackPlayer = PLAYER_HUMAN;
     isWhiteTurn = true;
     gameStarted = false;
+    shouldReturnToSelection = false;
     botThinking = false;
     wifiConnected = false;
     currentEvaluation = 0.0;
@@ -157,6 +158,7 @@ void UnifiedChessGame::reset() {
     botState = BOT_IDLE;
     botMoveFromRow = botMoveFromCol = botMoveToRow = botMoveToCol = -1;
     stockfishRequestInProgress = false;
+    shouldReturnToSelection = false;
     if (stockfishClient != nullptr) {
 #if defined(ESP32) || defined(ESP8266)
         WiFiClientSecure* client = (WiFiClientSecure*)stockfishClient;
@@ -253,12 +255,20 @@ bool UnifiedChessGame::canUndo() {
 void UnifiedChessGame::update() {
     if (!gameStarted) return;
     
+    // Always read sensors first to get current state
+    _boardDriver->readSensors();
+    
+    // Check if both kings are physically removed from the board (sensor-based detection)
+    checkForBothKingsMissing();
+    if (shouldReturnToSelection) {
+        return; // Don't process moves if we're returning to selection
+    }
+    
     // Check if current player is a bot
     PlayerType currentPlayer = isWhiteTurn ? whitePlayer : blackPlayer;
     
     if (currentPlayer == PLAYER_HUMAN) {
         // Human player's turn - handle move detection
-        _boardDriver->readSensors();
         
         // Look for piece pickup
         for (int row = 0; row < 8; row++) {
@@ -389,11 +399,15 @@ void UnifiedChessGame::update() {
             }
         }
         
-        _boardDriver->updateSensorPrev();
+        // Note: updateSensorPrev() is now called at end of update() for both human and bot
     } else {
         // Bot player's turn - use non-blocking state machine
+        // Note: sensors already read at start of update()
         updateBotState();
     }
+    
+    // Update sensor previous state at the end of the update cycle
+    _boardDriver->updateSensorPrev();
 }
 
 void UnifiedChessGame::processMove(int fromRow, int fromCol, int toRow, int toCol, char piece) {
@@ -767,7 +781,7 @@ void UnifiedChessGame::updateMoveCompletion() {
         }
     }
     
-    _boardDriver->updateSensorPrev();
+    // Note: updateSensorPrev() is now called at end of update() for both human and bot
 }
 
 void UnifiedChessGame::showBotThinking() {
@@ -1208,4 +1222,73 @@ void UnifiedChessGame::printCurrentBoard() {
     Serial.println("  a b c d e f g h");
     Serial.println("========================");
 }
+
+void UnifiedChessGame::checkForBothKingsMissing() {
+    // Find where the kings are on the board
+    int whiteKingRow = -1, whiteKingCol = -1;
+    int blackKingRow = -1, blackKingCol = -1;
+    
+    for (int row = 0; row < 8; row++) {
+        for (int col = 0; col < 8; col++) {
+            if (board[row][col] == 'K') {
+                whiteKingRow = row;
+                whiteKingCol = col;
+            }
+            if (board[row][col] == 'k') {
+                blackKingRow = row;
+                blackKingCol = col;
+            }
+        }
+    }
+    
+    // Debug: print king positions
+    if (whiteKingRow >= 0 && blackKingRow >= 0) {
+        Serial.print("DEBUG: White king at row=");
+        Serial.print(whiteKingRow);
+        Serial.print(", col=");
+        Serial.print(whiteKingCol);
+        Serial.print(" (sensor=");
+        Serial.print(_boardDriver->getSensorState(whiteKingRow, whiteKingCol) ? "present" : "missing");
+        Serial.print("), Black king at row=");
+        Serial.print(blackKingRow);
+        Serial.print(", col=");
+        Serial.print(blackKingCol);
+        Serial.print(" (sensor=");
+        Serial.print(_boardDriver->getSensorState(blackKingRow, blackKingCol) ? "present" : "missing");
+        Serial.println(")");
+    } else {
+        Serial.print("DEBUG: ");
+        if (whiteKingRow < 0) Serial.print("White king not found on board. ");
+        if (blackKingRow < 0) Serial.print("Black king not found on board. ");
+        Serial.println();
+    }
+    
+    // If we found both kings, check if they're physically missing (sensors detect no piece)
+    if (whiteKingRow >= 0 && blackKingRow >= 0) {
+        bool whiteKingMissing = !_boardDriver->getSensorState(whiteKingRow, whiteKingCol);
+        bool blackKingMissing = !_boardDriver->getSensorState(blackKingRow, blackKingCol);
+        
+        // If both kings are physically removed from the board, reset to game selection
+        if (whiteKingMissing && blackKingMissing) {
+            Serial.println("WARNING: Both kings are physically removed from the board!");
+            Serial.println("Returning to game selection...");
+            shouldReturnToSelection = true;
+            _boardDriver->clearAllLEDs();
+            // Flash all LEDs red to indicate reset
+            for (int i = 0; i < 3; i++) {
+                for (int row = 0; row < 8; row++) {
+                    for (int col = 0; col < 8; col++) {
+                        _boardDriver->setSquareLED(row, col, 255, 0, 0);
+                    }
+                }
+                _boardDriver->showLEDs();
+                delay(300);
+                _boardDriver->clearAllLEDs();
+                _boardDriver->showLEDs();
+                delay(300);
+            }
+        }
+    }
+}
+
 

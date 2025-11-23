@@ -316,6 +316,15 @@ void loop() {
           break;
         case MODE_UNIFIED_GAME:
           unifiedGame.update();
+          // Check if we should return to game selection (e.g., both kings missing)
+          if (unifiedGame.shouldReturnToGameSelection()) {
+            Serial.println("Returning to game selection mode...");
+            unifiedGame.clearReturnToSelectionFlag();
+            unifiedGame.reset();
+            currentMode = MODE_SELECTION;
+            modeInitialized = false;
+            showGameSelection();
+          }
           break;
         default:
           currentMode = MODE_SELECTION;
