@@ -207,9 +207,44 @@ void loop() {
     bool undoSuccess = false;
     if (currentMode == MODE_UNIFIED_GAME && modeInitialized) {
       if (unifiedGame.canUndo()) {
+        // Get board state before undo for debug
+        char boardBefore[8][8];
+        unifiedGame.getBoardState(boardBefore);
+        Serial.println("DEBUG: Board state before undo (first row):");
+        for (int c = 0; c < 8; c++) {
+          Serial.print("  [0][");
+          Serial.print(c);
+          Serial.print("] = '");
+          char p = boardBefore[0][c];
+          if (p == ' ') {
+            Serial.print("(space)");
+          } else {
+            Serial.print(p);
+          }
+          Serial.println("'");
+        }
+        
         undoSuccess = unifiedGame.undoLastMove();
+        
         if (undoSuccess) {
           Serial.println("Move undone successfully");
+          
+          // Get board state after undo for debug
+          char boardAfter[8][8];
+          unifiedGame.getBoardState(boardAfter);
+          Serial.println("DEBUG: Board state after undo (first row):");
+          for (int c = 0; c < 8; c++) {
+            Serial.print("  [0][");
+            Serial.print(c);
+            Serial.print("] = '");
+            char p = boardAfter[0][c];
+            if (p == ' ') {
+              Serial.print("(space)");
+            } else {
+              Serial.print(p);
+            }
+            Serial.println("'");
+          }
         } else {
           Serial.println("Failed to undo move");
         }

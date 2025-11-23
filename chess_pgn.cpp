@@ -137,30 +137,71 @@ void ChessPGN::addMove(int fromRow, int fromCol, int toRow, int toCol, char piec
 }
 
 bool ChessPGN::undoLastMove(char board[8][8]) {
-    if (moveCount == 0) return false;
+    if (moveCount == 0) {
+        Serial.println("DEBUG: undoLastMove - No moves to undo");
+        return false;
+    }
     
     moveCount--;
     MoveEntry& entry = moveHistory[moveCount];
     
     if (!entry.valid) {
+        Serial.println("DEBUG: undoLastMove - Entry is not valid");
         moveCount++;
         return false;
     }
+    
+    Serial.print("DEBUG: undoLastMove - Undoing move: ");
+    Serial.print((char)('a' + (7 - entry.fromCol)));
+    Serial.print((char)('1' + entry.fromRow));
+    Serial.print(" to ");
+    Serial.print((char)('a' + (7 - entry.toCol)));
+    Serial.print((char)('1' + entry.toRow));
+    Serial.print(", piece='");
+    Serial.print(entry.piece);
+    Serial.print("', captured='");
+    Serial.print(entry.capturedPiece);
+    Serial.println("'");
     
     // Handle promotion undo - if it was a promotion, restore original pawn
     if (entry.promotedPiece != '\0' && entry.promotedPiece != ' ') {
         // It was a promotion - restore the original pawn at the from position
         char originalPawn = entry.isWhiteMove ? 'P' : 'p';
         board[entry.fromRow][entry.fromCol] = originalPawn;
+        Serial.print("DEBUG: undoLastMove - Restored promoted pawn '");
+        Serial.print(originalPawn);
+        Serial.print("' at [");
+        Serial.print(entry.fromRow);
+        Serial.print("][");
+        Serial.print(entry.fromCol);
+        Serial.println("]");
     } else {
         // Normal move - restore the piece at the from position
         board[entry.fromRow][entry.fromCol] = entry.piece;
+        Serial.print("DEBUG: undoLastMove - Restored piece '");
+        Serial.print(entry.piece);
+        Serial.print("' at [");
+        Serial.print(entry.fromRow);
+        Serial.print("][");
+        Serial.print(entry.fromCol);
+        Serial.println("]");
     }
     
     // Restore what was at the destination (captured piece or empty)
     board[entry.toRow][entry.toCol] = entry.capturedPiece;
+    Serial.print("DEBUG: undoLastMove - Restored destination [");
+    Serial.print(entry.toRow);
+    Serial.print("][");
+    Serial.print(entry.toCol);
+    Serial.print("] to '");
+    Serial.print(entry.capturedPiece);
+    Serial.println("'");
+    
+    // Update internal board state to match
+    updateBoardState(board);
     
     entry.valid = false;
+    Serial.println("DEBUG: undoLastMove - Success");
     return true;
 }
 
