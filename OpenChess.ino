@@ -292,15 +292,17 @@ void loop() {
     
     float evaluation = 0.0;
     String pgn = "";
+    String fen = "";
     if (currentMode == MODE_UNIFIED_GAME && modeInitialized) {
       unifiedGame.getBoardState(currentBoard);
       evaluation = unifiedGame.getEvaluation();
       pgn = unifiedGame.getPGN();
+      fen = unifiedGame.getFEN();
       boardUpdated = true;
     }
     
     if (boardUpdated) {
-      wifiManager.updateBoardState(currentBoard, evaluation, pgn);
+      wifiManager.updateBoardState(currentBoard, evaluation, pgn, fen);
     }
     
     lastBoardUpdate = millis();

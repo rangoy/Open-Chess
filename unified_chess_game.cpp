@@ -172,6 +172,11 @@ void UnifiedChessGame::reset() {
         stockfishClient = nullptr;
     }
     isWhiteTurn = true;
+    
+    // Reset game state
+    gameState = GameState();
+    gameState.isWhiteTurn = true;
+    
     if (_pgnTracker) {
         _pgnTracker->reset();
         _pgnTracker->updateBoardState(board);
@@ -186,6 +191,11 @@ void UnifiedChessGame::initializeBoard() {
         }
     }
     isWhiteTurn = true;
+    
+    // Initialize game state
+    gameState = GameState();
+    gameState.isWhiteTurn = true;
+    
     if (_pgnTracker) {
         _pgnTracker->reset();
         _pgnTracker->updateBoardState(board);
@@ -284,15 +294,61 @@ void UnifiedChessGame::update() {
                     // Generate possible moves
                     int moveCount = 0;
                     int moves[28][2];
-                    _chessEngine->getPossibleMoves(board, row, col, moveCount, moves);
+                    gameState.isWhiteTurn = isWhiteTurn;
+                    
+                    // Debug: Print piece and position
+                    Serial.print("Piece picked up: ");
+                    Serial.print(piece);
+                    Serial.print(" at (");
+                    Serial.print(row);
+                    Serial.print(",");
+                    Serial.print(col);
+                    Serial.print("), isWhiteTurn: ");
+                    Serial.println(isWhiteTurn);
+                    Serial.print("Castling rights - White K: ");
+                    Serial.print(gameState.whiteCanCastleKingside);
+                    Serial.print(" Q: ");
+                    Serial.print(gameState.whiteCanCastleQueenside);
+                    Serial.print(" Black k: ");
+                    Serial.print(gameState.blackCanCastleKingside);
+                    Serial.print(" q: ");
+                    Serial.println(gameState.blackCanCastleQueenside);
+                    
+                    _chessEngine->getPossibleMoves(board, row, col, moveCount, moves, &gameState);
+                    
+                    Serial.print("Total moves generated: ");
+                    Serial.println(moveCount);
                     
                     // Light up current square and possible moves
                     _boardDriver->setSquareLED(row, col, 0, 0, 0, 100);
                     for (int i = 0; i < moveCount; i++) {
                         int r = moves[i][0];
                         int c = moves[i][1];
+                        
+                        // Check if this is a castling move
+                        int rookRow, rookCol;
+                        bool isCastling = _chessEngine->getCastlingRookPosition(row, col, r, c, rookRow, rookCol);
+                        
+                        if (isCastling) {
+                            Serial.print("Castling move detected: King to (");
+                            Serial.print(r);
+                            Serial.print(",");
+                            Serial.print(c);
+                            Serial.print("), Rook at (");
+                            Serial.print(rookRow);
+                            Serial.print(",");
+                            Serial.println(rookCol);
+                        }
+                        
                         if (board[r][c] == ' ') {
-                            _boardDriver->setSquareLED(r, c, 0, 0, 0, 50);
+                            // Use special color for castling moves (cyan)
+                            if (isCastling) {
+                                _boardDriver->setSquareLED(r, c, 0, 255, 255, 80); // Cyan for castling destination
+                                // Also highlight the rook that will move
+                                _boardDriver->setSquareLED(rookRow, rookCol, 0, 255, 255, 80); // Cyan for rook
+                            } else {
+                                _boardDriver->setSquareLED(r, c, 0, 0, 0, 50);
+                            }
                         } else {
                             _boardDriver->setSquareLED(r, c, 255, 0, 0, 50);
                         }
@@ -412,12 +468,70 @@ void UnifiedChessGame::update() {
 
 void UnifiedChessGame::processMove(int fromRow, int fromCol, int toRow, int toCol, char piece) {
     char capturedPiece = board[toRow][toCol];
-    board[toRow][toCol] = piece;
-    board[fromRow][fromCol] = ' ';
+    
+    // Handle castling
+    if (_chessEngine->isCastlingMove(fromRow, fromCol, toRow, toCol, piece)) {
+        int rookFromRow, rookFromCol, rookToRow, rookToCol;
+        _chessEngine->executeCastling(board, fromRow, fromCol, toRow, toCol, 
+                                       rookFromRow, rookFromCol, rookToRow, rookToCol);
+        
+        // Move king
+        board[toRow][toCol] = piece;
+        board[fromRow][fromCol] = ' ';
+        
+        // Move rook
+        char rook = board[rookFromRow][rookFromCol];
+        board[rookToRow][rookToCol] = rook;
+        board[rookFromRow][rookFromCol] = ' ';
+        
+        Serial.println("Castling move executed!");
+    }
+    // Handle en passant
+    else if (_chessEngine->isEnPassantMove(fromRow, fromCol, toRow, toCol, piece, &gameState)) {
+        int capturedPawnRow, capturedPawnCol;
+        char pieceColor = (piece >= 'a' && piece <= 'z') ? 'b' : 'w';
+        _chessEngine->executeEnPassant(fromRow, fromCol, toRow, toCol, pieceColor, 
+                                        capturedPawnRow, capturedPawnCol);
+        
+        // Move pawn
+        board[toRow][toCol] = piece;
+        board[fromRow][fromCol] = ' ';
+        
+        // Remove captured pawn
+        capturedPiece = board[capturedPawnRow][capturedPawnCol];
+        board[capturedPawnRow][capturedPawnCol] = ' ';
+        
+        Serial.println("En passant move executed!");
+    }
+    // Regular move
+    else {
+        board[toRow][toCol] = piece;
+        board[fromRow][fromCol] = ' ';
+    }
+    
     isWhiteTurn = !isWhiteTurn;
+    
+    // Update game state after move
+    _chessEngine->updateGameStateAfterMove(board, fromRow, fromCol, toRow, toCol, piece, capturedPiece, gameState);
     
     if (capturedPiece != ' ') {
         _boardDriver->captureAnimation();
+    }
+    
+    // Check game result
+    GameResult result = _chessEngine->getGameResult(board, &gameState);
+    switch(result) {
+        case GAME_CHECK:
+            Serial.println("Check!");
+            break;
+        case GAME_CHECKMATE:
+            Serial.println("Checkmate!");
+            break;
+        case GAME_STALEMATE:
+            Serial.println("Stalemate!");
+            break;
+        default:
+            break;
     }
 }
 
@@ -914,6 +1028,10 @@ void UnifiedChessGame::showBotMoveIndicator(int fromRow, int fromCol, int toRow,
 
 // waitForBotMoveCompletion removed - now using non-blocking updateMoveCompletion()
 
+String UnifiedChessGame::getFEN() {
+    return boardToFEN();
+}
+
 String UnifiedChessGame::boardToFEN() {
     String fen = "";
     for (int row = 7; row >= 0; row--) {
@@ -936,8 +1054,38 @@ String UnifiedChessGame::boardToFEN() {
         }
         if (row > 0) fen += "/";
     }
+    
+    // Active color
     fen += isWhiteTurn ? " w" : " b";
-    fen += " KQkq - 0 1";
+    
+    // Castling rights
+    String castling = "";
+    if (gameState.whiteCanCastleKingside) castling += "K";
+    if (gameState.whiteCanCastleQueenside) castling += "Q";
+    if (gameState.blackCanCastleKingside) castling += "k";
+    if (gameState.blackCanCastleQueenside) castling += "q";
+    if (castling.length() == 0) castling = "-";
+    fen += " " + castling;
+    
+    // En passant target square
+    if (gameState.enPassantRow >= 0 && gameState.enPassantCol >= 0) {
+        // Convert to algebraic notation
+        // Columns are reversed: col 0 = file 'h', col 7 = file 'a'
+        char file = 'a' + (7 - gameState.enPassantCol);
+        int rank = 1 + gameState.enPassantRow;
+        fen += " ";
+        fen += file;
+        fen += String(rank);
+    } else {
+        fen += " -";
+    }
+    
+    // Halfmove clock and fullmove number
+    fen += " ";
+    fen += String(gameState.halfmoveClock);
+    fen += " ";
+    fen += String(gameState.fullmoveNumber);
+    
     return fen;
 }
 

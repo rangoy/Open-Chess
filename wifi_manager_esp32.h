@@ -44,6 +44,7 @@ private:
     bool boardStateValid;
     float boardEvaluation;  // Stockfish evaluation (in centipawns)
     String boardPGN;  // PGN notation of the game
+    String boardFEN;  // FEN notation of the game
     
     // Board edit storage (pending edits from web interface)
     char pendingBoardEdit[8][8];
@@ -113,6 +114,7 @@ public:
     void updateBoardState(char newBoardState[8][8]);
     void updateBoardState(char newBoardState[8][8], float evaluation);
     void updateBoardState(char newBoardState[8][8], float evaluation, String pgn);
+    void updateBoardState(char newBoardState[8][8], float evaluation, String pgn, String fen);
     bool hasValidBoardState() { return boardStateValid; }
     float getEvaluation() { return boardEvaluation; }
     String getPGN() { return boardPGN; }

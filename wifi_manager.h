@@ -92,6 +92,7 @@ public:
     void updateBoardState(char newBoardState[8][8]);
     void updateBoardState(char newBoardState[8][8], float evaluation);
     void updateBoardState(char newBoardState[8][8], float evaluation, String pgn);
+    void updateBoardState(char newBoardState[8][8], float evaluation, String pgn, String fen);
     bool hasValidBoardState() { return boardStateValid; }
     float getEvaluation() { return boardEvaluation; }
     String getPGN() { return boardPGN; }

@@ -399,6 +399,10 @@ void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation) {
 }
 
 void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation, String pgn) {
+    updateBoardState(newBoardState, evaluation, pgn, "");
+}
+
+void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation, String pgn, String fen) {
     for (int row = 0; row < 8; row++) {
         for (int col = 0; col < 8; col++) {
             boardState[row][col] = newBoardState[row][col];
@@ -407,6 +411,7 @@ void WiFiManager::updateBoardState(char newBoardState[8][8], float evaluation, S
     boardStateValid = true;
     boardEvaluation = evaluation;
     boardPGN = pgn;
+    boardFEN = fen;
 }
 
 String WiFiManager::generateBoardJSON() {
@@ -442,6 +447,16 @@ String WiFiManager::generateBoardJSON() {
         json += "\"";
     } else {
         json += ",\"pgn\":\"\"";
+    }
+    if (boardFEN.length() > 0) {
+        json += ",\"fen\":\"";
+        // Escape quotes in FEN
+        String escapedFEN = boardFEN;
+        escapedFEN.replace("\"", "\\\"");
+        json += escapedFEN;
+        json += "\"";
+    } else {
+        json += ",\"fen\":\"\"";
     }
     json += "}";
     

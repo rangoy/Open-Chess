@@ -22,6 +22,7 @@ private:
     
     char board[8][8];
     static const char INITIAL_BOARD[8][8];
+    GameState gameState;  // Track castling rights, en passant, etc.
     
     PlayerType whitePlayer;
     PlayerType blackPlayer;
@@ -88,6 +89,9 @@ public:
     
     // Get current board state for WiFi display
     void getBoardState(char boardState[8][8]);
+    
+    // Get current FEN string
+    String getFEN();
     
     // Set board state for editing/corrections
     void setBoardState(char newBoardState[8][8]);
