@@ -192,10 +192,26 @@ function getPlayerName(playerType) {
 
 // Board View
 let boardViewInterval = null;
+let chessboardInstance = null;
 
 function initBoardView() {
     const board = document.getElementById('chess-board');
     board.innerHTML = '';
+    
+    // Try to use cm-chessboard if available (loaded via script tag)
+    // Check if Chessboard is available in global scope
+    if (typeof window.Chessboard !== 'undefined' && typeof window.ChessboardView !== 'undefined') {
+        try {
+            // cm-chessboard will be available globally if loaded via script tag
+            // For now, we'll use a simpler check - if the library loaded, use it
+            // Otherwise fall back to manual rendering
+            console.log('cm-chessboard available, will use it for rendering');
+        } catch (error) {
+            console.warn('cm-chessboard error:', error);
+        }
+    }
+    
+    // Fallback: Create manual board squares (will be used if cm-chessboard not available)
     for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
             const isLight = (row + col) % 2 === 0;
@@ -205,6 +221,32 @@ function initBoardView() {
             board.appendChild(square);
         }
     }
+    
+    // Try to initialize cm-chessboard after a short delay to ensure scripts are loaded
+    setTimeout(function() {
+        try {
+            if (typeof Chessboard !== 'undefined') {
+                chessboardInstance = new Chessboard(board, {
+                    position: '8/8/8/8/8/8/8/8',
+                    assetsUrl: 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.11.0/assets/',
+                    style: {
+                        cssClass: 'default',
+                        showCoordinates: true,
+                        borderType: 'frame'
+                    },
+                    responsive: true
+                });
+                // Clear manual squares since cm-chessboard will render
+                board.innerHTML = '';
+                board.appendChild(chessboardInstance.view.element);
+                console.log('cm-chessboard initialized successfully');
+            }
+        } catch (error) {
+            console.warn('cm-chessboard initialization failed, using manual rendering:', error);
+            chessboardInstance = null;
+        }
+    }, 100);
+    
     updateBoardView();
     
     // Clear any existing interval
@@ -269,24 +311,43 @@ function updateBoardDisplay(data) {
         containerEl.style.display = 'block';
         noBoardEl.style.display = 'none';
 
-        // Parse and display board from FEN
+        // Update board from FEN
         if (data.fen && data.fen.length > 0) {
-            const board = parseFEN(data.fen);
-            if (board) {
-                // Update board squares
-                for (let row = 0; row < 8; row++) {
-                    for (let col = 0; col < 8; col++) {
-                        const piece = board[row][col];
-                        const square = document.getElementById('square-' + row + '-' + col);
-                        if (piece && piece !== '' && piece !== ' ') {
-                            const isWhite = piece === piece.toUpperCase();
-                            const symbol = getPieceSymbol(piece);
-                            square.innerHTML = '<span class="piece ' + (isWhite ? 'white' : 'black') + '">' + symbol + '</span>';
-                        } else {
-                            square.innerHTML = '';
-                        }
-                    }
+            // Extract just the position part of FEN (before the first space)
+            const fenPosition = data.fen.split(' ')[0];
+            
+            // Try to use cm-chessboard if available
+            if (chessboardInstance && typeof chessboardInstance.setPosition === 'function') {
+                try {
+                    chessboardInstance.setPosition(fenPosition, true);
+                } catch (error) {
+                    console.error('Error setting position with cm-chessboard:', error);
+                    // Fallback to manual rendering
+                    updateBoardManually(data.fen);
                 }
+            } else if (typeof window.Chessboard !== 'undefined' && !chessboardInstance) {
+                // Try to initialize cm-chessboard now if it just became available
+                try {
+                    const board = document.getElementById('chess-board');
+                    if (board && board.children.length === 0) {
+                        chessboardInstance = new window.Chessboard(board, {
+                            position: fenPosition,
+                            assetsUrl: 'https://cdn.jsdelivr.net/npm/cm-chessboard@8.11.0/assets/',
+                            style: {
+                                cssClass: 'default',
+                                showCoordinates: true,
+                                borderType: 'frame'
+                            },
+                            responsive: true
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Failed to initialize cm-chessboard:', error);
+                    updateBoardManually(data.fen);
+                }
+            } else {
+                // Fallback to manual rendering
+                updateBoardManually(data.fen);
             }
         }
         
@@ -318,6 +379,28 @@ function updateBoardDisplay(data) {
         statusEl.textContent = 'Board state: Not available';
         containerEl.style.display = 'none';
         noBoardEl.style.display = 'block';
+    }
+}
+
+function updateBoardManually(fen) {
+    const board = parseFEN(fen);
+    if (board) {
+        // Update board squares manually
+        for (let row = 0; row < 8; row++) {
+            for (let col = 0; col < 8; col++) {
+                const piece = board[row][col];
+                const square = document.getElementById('square-' + row + '-' + col);
+                if (square) {
+                    if (piece && piece !== '' && piece !== ' ') {
+                        const isWhite = piece === piece.toUpperCase();
+                        const symbol = getPieceSymbol(piece);
+                        square.innerHTML = '<span class="piece ' + (isWhite ? 'white' : 'black') + '">' + symbol + '</span>';
+                    } else {
+                        square.innerHTML = '';
+                    }
+                }
+            }
+        }
     }
 }
 

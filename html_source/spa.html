@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenChess Board</title>
     <link rel="stylesheet" href="/spa.css">
+    <!-- cm-chessboard CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cm-chessboard@8.11.0/assets/chessboard.css">
 </head>
 <body>
     <!-- Navigation -->
@@ -170,6 +172,28 @@
     </div>
 
     <script src="/spa.js"></script>
+    <!-- cm-chessboard - load as module after main script -->
+    <script type="module">
+        // Load cm-chessboard dynamically
+        import('https://cdn.jsdelivr.net/npm/cm-chessboard@8.11.0/src/Chessboard.js').then(module => {
+            window.Chessboard = module.Chessboard;
+            window.COLOR = module.COLOR;
+            window.BORDER_TYPE = module.BORDER_TYPE;
+            return import('https://cdn.jsdelivr.net/npm/cm-chessboard@8.11.0/src/model/Position.js');
+        }).then(module => {
+            window.FEN = module.FEN;
+            console.log('cm-chessboard modules loaded');
+            // Reinitialize board view if it was already initialized
+            if (typeof initBoardView === 'function') {
+                const boardEl = document.getElementById('chess-board');
+                if (boardEl && boardEl.parentElement) {
+                    // Board view might need reinitialization
+                }
+            }
+        }).catch(error => {
+            console.warn('Failed to load cm-chessboard:', error);
+        });
+    </script>
 </body>
 </html>
 
