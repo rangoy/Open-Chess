@@ -50,6 +50,8 @@ bool modeInitialized = false;
 // Game selection state
 PlayerType selectedWhitePlayer = PLAYER_HUMAN;
 PlayerType selectedBlackPlayer = PLAYER_HUMAN;
+int selectedWhiteCol = -1;  // Track which column was selected for white
+int selectedBlackCol = -1;  // Track which column was selected for black
 bool whiteSelected = false;
 bool blackSelected = false;
 
@@ -351,25 +353,25 @@ void showGameSelection() {
   // Clear all LEDs first
   boardDriver.clearAllLEDs();
   
-  // White side selection (rank 4, row 4 in array): a4, b4, c4, d4
-  // a4 (col 0, row 4) = Human - White
-  boardDriver.setSquareLED(4, 0, 0, 0, 0, 255);  // White LED
-  // b4 (col 1, row 4) = Easy AI - Green
-  boardDriver.setSquareLED(4, 1, 0, 255, 0);  // Green
-  // c4 (col 2, row 4) = Medium AI - Yellow
-  boardDriver.setSquareLED(4, 2, 255, 255, 0);  // Yellow
-  // d4 (col 3, row 4) = Hard AI - Orange
-  boardDriver.setSquareLED(4, 3, 255, 165, 0);  // Orange
-  
-  // Black side selection (rank 5, row 3 in array): a5, b5, c5, d5
-  // a5 (col 0, row 3) = Human - White
+  // White side selection (rank 4, row 3 in array): a4, b4, c4, d4
+  // a4 (col 0, row 3) = Human - White
   boardDriver.setSquareLED(3, 0, 0, 0, 0, 255);  // White LED
-  // b5 (col 1, row 3) = Easy AI - Green
+  // b4 (col 1, row 3) = Easy AI - Green
   boardDriver.setSquareLED(3, 1, 0, 255, 0);  // Green
-  // c5 (col 2, row 3) = Medium AI - Yellow
+  // c4 (col 2, row 3) = Medium AI - Yellow
   boardDriver.setSquareLED(3, 2, 255, 255, 0);  // Yellow
-  // d5 (col 3, row 3) = Hard AI - Orange
+  // d4 (col 3, row 3) = Hard AI - Orange
   boardDriver.setSquareLED(3, 3, 255, 165, 0);  // Orange
+  
+  // Black side selection (rank 5, row 4 in array): a5, b5, c5, d5
+  // a5 (col 0, row 4) = Human - White
+  boardDriver.setSquareLED(4, 0, 0, 0, 0, 255);  // White LED
+  // b5 (col 1, row 4) = Easy AI - Green
+  boardDriver.setSquareLED(4, 1, 0, 255, 0);  // Green
+  // c5 (col 2, row 4) = Medium AI - Yellow
+  boardDriver.setSquareLED(4, 2, 255, 255, 0);  // Yellow
+  // d5 (col 3, row 4) = Hard AI - Orange
+  boardDriver.setSquareLED(4, 3, 255, 165, 0);  // Orange
   
   // Sensor Test (row 4, col 4) - Red
   boardDriver.setSquareLED(4, 4, 255, 0, 0);
@@ -378,8 +380,8 @@ void showGameSelection() {
 }
 
 PlayerType getPlayerTypeFromPosition(int row, int col) {
-  // White selection: rank 4 (row 4 in array)
-  if (row == 4) {
+  // White selection: rank 4 (row 3 in array)
+  if (row == 3) {
     switch(col) {
       case 0: return PLAYER_HUMAN;      // a4
       case 1: return PLAYER_BOT_EASY;   // b4
@@ -388,8 +390,8 @@ PlayerType getPlayerTypeFromPosition(int row, int col) {
       default: return PLAYER_HUMAN;
     }
   }
-  // Black selection: rank 5 (row 3 in array)
-  else if (row == 3) {
+  // Black selection: rank 5 (row 4 in array)
+  else if (row == 4) {
     switch(col) {
       case 0: return PLAYER_HUMAN;      // a5
       case 1: return PLAYER_BOT_EASY;   // b5
@@ -404,12 +406,78 @@ PlayerType getPlayerTypeFromPosition(int row, int col) {
 void handleGameSelection() {
   boardDriver.readSensors();
   
-  // Check for white side selection (rank 4, row 4)
+  // Update display to show current selection state (only if not in the middle of a selection animation)
+  static unsigned long lastSelectionTime = 0;
+  static bool inSelectionAnimation = false;
+  
+  if (!inSelectionAnimation && millis() - lastSelectionTime > 600) { // Only update display if not recently selected
+    if (whiteSelected && !blackSelected) {
+      // White selected, show selected white + all black options
+      boardDriver.clearAllLEDs();
+      if (selectedWhiteCol >= 0) {
+        // Use original color for selected white square
+        switch(selectedWhiteCol) {
+          case 0: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 0, 0, 255); break; // Human - White
+          case 1: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 255, 0); break; // Easy AI - Green
+          case 2: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 255, 0); break; // Medium AI - Yellow
+          case 3: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 165, 0); break; // Hard AI - Orange
+        }
+      }
+      // Show all black options
+      boardDriver.setSquareLED(4, 0, 0, 0, 0, 255);  // Human
+      boardDriver.setSquareLED(4, 1, 0, 255, 0);     // Easy AI
+      boardDriver.setSquareLED(4, 2, 255, 255, 0);   // Medium AI
+      boardDriver.setSquareLED(4, 3, 255, 165, 0);   // Hard AI
+      boardDriver.showLEDs();
+    } else if (!whiteSelected && blackSelected) {
+      // Black selected first, show selected black + all white options
+      boardDriver.clearAllLEDs();
+      if (selectedBlackCol >= 0) {
+        // Use original color for selected black square
+        switch(selectedBlackCol) {
+          case 0: boardDriver.setSquareLED(4, selectedBlackCol, 0, 0, 0, 255); break; // Human - White
+          case 1: boardDriver.setSquareLED(4, selectedBlackCol, 0, 255, 0); break; // Easy AI - Green
+          case 2: boardDriver.setSquareLED(4, selectedBlackCol, 255, 255, 0); break; // Medium AI - Yellow
+          case 3: boardDriver.setSquareLED(4, selectedBlackCol, 255, 165, 0); break; // Hard AI - Orange
+        }
+      }
+      // Show all white options
+      boardDriver.setSquareLED(3, 0, 0, 0, 0, 255);  // Human
+      boardDriver.setSquareLED(3, 1, 0, 255, 0);     // Easy AI
+      boardDriver.setSquareLED(3, 2, 255, 255, 0);   // Medium AI
+      boardDriver.setSquareLED(3, 3, 255, 165, 0);   // Hard AI
+      boardDriver.showLEDs();
+    } else if (whiteSelected && blackSelected) {
+      // Both selected, show only selected squares with original colors
+      boardDriver.clearAllLEDs();
+      if (selectedWhiteCol >= 0) {
+        switch(selectedWhiteCol) {
+          case 0: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 0, 0, 255); break; // Human - White
+          case 1: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 255, 0); break; // Easy AI - Green
+          case 2: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 255, 0); break; // Medium AI - Yellow
+          case 3: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 165, 0); break; // Hard AI - Orange
+        }
+      }
+      if (selectedBlackCol >= 0) {
+        switch(selectedBlackCol) {
+          case 0: boardDriver.setSquareLED(4, selectedBlackCol, 0, 0, 0, 255); break; // Human - White
+          case 1: boardDriver.setSquareLED(4, selectedBlackCol, 0, 255, 0); break; // Easy AI - Green
+          case 2: boardDriver.setSquareLED(4, selectedBlackCol, 255, 255, 0); break; // Medium AI - Yellow
+          case 3: boardDriver.setSquareLED(4, selectedBlackCol, 255, 165, 0); break; // Hard AI - Orange
+        }
+      }
+      boardDriver.showLEDs();
+    }
+  }
+  
+  // Check for white side selection (rank 4, row 3)
   if (!whiteSelected) {
     for (int col = 0; col < 4; col++) {
-      if (boardDriver.getSensorState(4, col)) {
-        selectedWhitePlayer = getPlayerTypeFromPosition(4, col);
+      if (boardDriver.getSensorState(3, col)) {
+        selectedWhitePlayer = getPlayerTypeFromPosition(3, col);
+        selectedWhiteCol = col;
         whiteSelected = true;
+        inSelectionAnimation = true;
         Serial.print("White player selected: ");
         switch(selectedWhitePlayer) {
           case PLAYER_HUMAN: Serial.println("Human"); break;
@@ -419,25 +487,61 @@ void handleGameSelection() {
         }
         // Flash the selected square
         for (int i = 0; i < 3; i++) {
-          boardDriver.setSquareLED(4, col, 0, 255, 0);
+          boardDriver.clearAllLEDs();
+          boardDriver.setSquareLED(3, col, 0, 255, 0);
+          // Keep all black options lit
+          boardDriver.setSquareLED(4, 0, 0, 0, 0, 255);  // Human
+          boardDriver.setSquareLED(4, 1, 0, 255, 0);     // Easy AI
+          boardDriver.setSquareLED(4, 2, 255, 255, 0);   // Medium AI
+          boardDriver.setSquareLED(4, 3, 255, 165, 0);   // Hard AI
           boardDriver.showLEDs();
           delay(200);
-          boardDriver.setSquareLED(4, col, 0, 0, 0, 255);
+          boardDriver.clearAllLEDs();
+          // Use original color for selected white square
+          switch(col) {
+            case 0: boardDriver.setSquareLED(3, col, 0, 0, 0, 255); break; // Human - White
+            case 1: boardDriver.setSquareLED(3, col, 0, 255, 0); break; // Easy AI - Green
+            case 2: boardDriver.setSquareLED(3, col, 255, 255, 0); break; // Medium AI - Yellow
+            case 3: boardDriver.setSquareLED(3, col, 255, 165, 0); break; // Hard AI - Orange
+          }
+          // Keep all black options lit
+          boardDriver.setSquareLED(4, 0, 0, 0, 0, 255);  // Human
+          boardDriver.setSquareLED(4, 1, 0, 255, 0);     // Easy AI
+          boardDriver.setSquareLED(4, 2, 255, 255, 0);   // Medium AI
+          boardDriver.setSquareLED(4, 3, 255, 165, 0);   // Hard AI
           boardDriver.showLEDs();
           delay(200);
         }
+        // Keep selected white square (with original color) and all black options lit
+        boardDriver.clearAllLEDs();
+        switch(col) {
+          case 0: boardDriver.setSquareLED(3, col, 0, 0, 0, 255); break; // Human - White
+          case 1: boardDriver.setSquareLED(3, col, 0, 255, 0); break; // Easy AI - Green
+          case 2: boardDriver.setSquareLED(3, col, 255, 255, 0); break; // Medium AI - Yellow
+          case 3: boardDriver.setSquareLED(3, col, 255, 165, 0); break; // Hard AI - Orange
+        }
+        // Keep all black options lit
+        boardDriver.setSquareLED(4, 0, 0, 0, 0, 255);  // Human
+        boardDriver.setSquareLED(4, 1, 0, 255, 0);     // Easy AI
+        boardDriver.setSquareLED(4, 2, 255, 255, 0);   // Medium AI
+        boardDriver.setSquareLED(4, 3, 255, 165, 0);   // Hard AI
+        boardDriver.showLEDs();
+        lastSelectionTime = millis();
+        inSelectionAnimation = false;
         delay(500);
         break;
       }
     }
   }
   
-  // Check for black side selection (rank 5, row 3)
+  // Check for black side selection (rank 5, row 4)
   if (!blackSelected) {
     for (int col = 0; col < 4; col++) {
-      if (boardDriver.getSensorState(3, col)) {
-        selectedBlackPlayer = getPlayerTypeFromPosition(3, col);
+      if (boardDriver.getSensorState(4, col)) {
+        selectedBlackPlayer = getPlayerTypeFromPosition(4, col);
+        selectedBlackCol = col;
         blackSelected = true;
+        inSelectionAnimation = true;
         Serial.print("Black player selected: ");
         switch(selectedBlackPlayer) {
           case PLAYER_HUMAN: Serial.println("Human"); break;
@@ -447,13 +551,75 @@ void handleGameSelection() {
         }
         // Flash the selected square
         for (int i = 0; i < 3; i++) {
-          boardDriver.setSquareLED(3, col, 0, 255, 0);
+          boardDriver.clearAllLEDs();
+          boardDriver.setSquareLED(4, col, 0, 255, 0);
+          // Also show white selection if it exists (with original color)
+          if (whiteSelected && selectedWhiteCol >= 0) {
+            switch(selectedWhiteCol) {
+              case 0: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 0, 0, 255); break; // Human - White
+              case 1: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 255, 0); break; // Easy AI - Green
+              case 2: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 255, 0); break; // Medium AI - Yellow
+              case 3: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 165, 0); break; // Hard AI - Orange
+            }
+          } else {
+            // Show all white options if white not yet selected
+            boardDriver.setSquareLED(3, 0, 0, 0, 0, 255);  // Human
+            boardDriver.setSquareLED(3, 1, 0, 255, 0);     // Easy AI
+            boardDriver.setSquareLED(3, 2, 255, 255, 0);   // Medium AI
+            boardDriver.setSquareLED(3, 3, 255, 165, 0);   // Hard AI
+          }
           boardDriver.showLEDs();
           delay(200);
-          boardDriver.setSquareLED(3, col, 0, 0, 0, 255);
+          boardDriver.clearAllLEDs();
+          // Use original color for selected black square
+          switch(col) {
+            case 0: boardDriver.setSquareLED(4, col, 0, 0, 0, 255); break; // Human - White
+            case 1: boardDriver.setSquareLED(4, col, 0, 255, 0); break; // Easy AI - Green
+            case 2: boardDriver.setSquareLED(4, col, 255, 255, 0); break; // Medium AI - Yellow
+            case 3: boardDriver.setSquareLED(4, col, 255, 165, 0); break; // Hard AI - Orange
+          }
+          if (whiteSelected && selectedWhiteCol >= 0) {
+            switch(selectedWhiteCol) {
+              case 0: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 0, 0, 255); break; // Human - White
+              case 1: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 255, 0); break; // Easy AI - Green
+              case 2: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 255, 0); break; // Medium AI - Yellow
+              case 3: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 165, 0); break; // Hard AI - Orange
+            }
+          } else {
+            // Show all white options if white not yet selected
+            boardDriver.setSquareLED(3, 0, 0, 0, 0, 255);  // Human
+            boardDriver.setSquareLED(3, 1, 0, 255, 0);     // Easy AI
+            boardDriver.setSquareLED(3, 2, 255, 255, 0);   // Medium AI
+            boardDriver.setSquareLED(3, 3, 255, 165, 0);   // Hard AI
+          }
           boardDriver.showLEDs();
           delay(200);
         }
+        // Keep selected black square and all white options (or selected white if already selected)
+        boardDriver.clearAllLEDs();
+        switch(col) {
+          case 0: boardDriver.setSquareLED(4, col, 0, 0, 0, 255); break; // Human - White
+          case 1: boardDriver.setSquareLED(4, col, 0, 255, 0); break; // Easy AI - Green
+          case 2: boardDriver.setSquareLED(4, col, 255, 255, 0); break; // Medium AI - Yellow
+          case 3: boardDriver.setSquareLED(4, col, 255, 165, 0); break; // Hard AI - Orange
+        }
+        if (whiteSelected && selectedWhiteCol >= 0) {
+          switch(selectedWhiteCol) {
+            case 0: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 0, 0, 255); break; // Human - White
+            case 1: boardDriver.setSquareLED(3, selectedWhiteCol, 0, 255, 0); break; // Easy AI - Green
+            case 2: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 255, 0); break; // Medium AI - Yellow
+            case 3: boardDriver.setSquareLED(3, selectedWhiteCol, 255, 165, 0); break; // Hard AI - Orange
+          }
+        } else {
+          // Show all white options if white not yet selected
+          boardDriver.setSquareLED(3, 0, 0, 0, 0, 255);  // Human
+          boardDriver.setSquareLED(3, 1, 0, 255, 0);     // Easy AI
+          boardDriver.setSquareLED(3, 2, 255, 255, 0);   // Medium AI
+          boardDriver.setSquareLED(3, 3, 255, 165, 0);   // Hard AI
+        }
+        boardDriver.showLEDs();
+        lastSelectionTime = millis();
+        inSelectionAnimation = false;
         delay(500);
         break;
       }
@@ -467,6 +633,8 @@ void handleGameSelection() {
     modeInitialized = false;
     whiteSelected = false;
     blackSelected = false;
+    selectedWhiteCol = -1;
+    selectedBlackCol = -1;
     boardDriver.clearAllLEDs();
     delay(500);
   }
@@ -494,6 +662,8 @@ void handleGameSelection() {
     modeInitialized = false;
     whiteSelected = false;
     blackSelected = false;
+    selectedWhiteCol = -1;
+    selectedBlackCol = -1;
     boardDriver.clearAllLEDs();
     delay(500);
   }
